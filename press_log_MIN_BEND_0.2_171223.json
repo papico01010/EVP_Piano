@@ -1,0 +1,256 @@
+{
+  "MIN_BEND_TH": 0.2,
+  "total": 50,
+  "logs": [
+    {
+      "finger": "pinky",
+      "bend": 0.921,
+      "vel": 0.0164
+    },
+    {
+      "finger": "pinky",
+      "bend": 1.0,
+      "vel": 0.0222
+    },
+    {
+      "finger": "index",
+      "bend": 0.965,
+      "vel": 0.0395
+    },
+    {
+      "finger": "index",
+      "bend": 1.0,
+      "vel": 0.031
+    },
+    {
+      "finger": "index",
+      "bend": 0.649,
+      "vel": 0.015
+    },
+    {
+      "finger": "middle",
+      "bend": 1.0,
+      "vel": 0.0293
+    },
+    {
+      "finger": "middle",
+      "bend": 0.981,
+      "vel": 0.0219
+    },
+    {
+      "finger": "middle",
+      "bend": 0.745,
+      "vel": 0.043
+    },
+    {
+      "finger": "middle",
+      "bend": 0.696,
+      "vel": 0.0395
+    },
+    {
+      "finger": "middle",
+      "bend": 0.929,
+      "vel": 0.0339
+    },
+    {
+      "finger": "ring",
+      "bend": 0.739,
+      "vel": 0.0353
+    },
+    {
+      "finger": "ring",
+      "bend": 1.0,
+      "vel": 0.0159
+    },
+    {
+      "finger": "ring",
+      "bend": 0.743,
+      "vel": 0.0236
+    },
+    {
+      "finger": "pinky",
+      "bend": 0.318,
+      "vel": 0.0135
+    },
+    {
+      "finger": "pinky",
+      "bend": 0.821,
+      "vel": 0.0307
+    },
+    {
+      "finger": "ring",
+      "bend": 1.0,
+      "vel": 0.0198
+    },
+    {
+      "finger": "pinky",
+      "bend": 0.811,
+      "vel": 0.0347
+    },
+    {
+      "finger": "pinky",
+      "bend": 1.0,
+      "vel": 0.0157
+    },
+    {
+      "finger": "ring",
+      "bend": 1.0,
+      "vel": 0.0121
+    },
+    {
+      "finger": "ring",
+      "bend": 0.726,
+      "vel": 0.0206
+    },
+    {
+      "finger": "ring",
+      "bend": 0.6,
+      "vel": 0.0382
+    },
+    {
+      "finger": "pinky",
+      "bend": 1.0,
+      "vel": 0.0248
+    },
+    {
+      "finger": "index",
+      "bend": 0.895,
+      "vel": 0.0421
+    },
+    {
+      "finger": "index",
+      "bend": 0.903,
+      "vel": 0.0416
+    },
+    {
+      "finger": "middle",
+      "bend": 0.592,
+      "vel": 0.0146
+    },
+    {
+      "finger": "pinky",
+      "bend": 1.0,
+      "vel": 0.0202
+    },
+    {
+      "finger": "pinky",
+      "bend": 0.915,
+      "vel": 0.0218
+    },
+    {
+      "finger": "ring",
+      "bend": 0.722,
+      "vel": 0.032
+    },
+    {
+      "finger": "pinky",
+      "bend": 1.0,
+      "vel": 0.0234
+    },
+    {
+      "finger": "middle",
+      "bend": 1.0,
+      "vel": 0.0273
+    },
+    {
+      "finger": "middle",
+      "bend": 0.743,
+      "vel": 0.039
+    },
+    {
+      "finger": "middle",
+      "bend": 1.0,
+      "vel": 0.0136
+    },
+    {
+      "finger": "middle",
+      "bend": 1.0,
+      "vel": 0.0219
+    },
+    {
+      "finger": "middle",
+      "bend": 1.0,
+      "vel": 0.0138
+    },
+    {
+      "finger": "middle",
+      "bend": 0.834,
+      "vel": 0.029
+    },
+    {
+      "finger": "middle",
+      "bend": 0.755,
+      "vel": 0.0337
+    },
+    {
+      "finger": "middle",
+      "bend": 0.6,
+      "vel": 0.055
+    },
+    {
+      "finger": "middle",
+      "bend": 0.975,
+      "vel": 0.0145
+    },
+    {
+      "finger": "middle",
+      "bend": 0.6,
+      "vel": 0.0482
+    },
+    {
+      "finger": "middle",
+      "bend": 0.677,
+      "vel": 0.0326
+    },
+    {
+      "finger": "pinky",
+      "bend": 0.923,
+      "vel": 0.0268
+    },
+    {
+      "finger": "ring",
+      "bend": 1.0,
+      "vel": 0.0131
+    },
+    {
+      "finger": "middle",
+      "bend": 1.0,
+      "vel": 0.0168
+    },
+    {
+      "finger": "middle",
+      "bend": 1.0,
+      "vel": 0.027
+    },
+    {
+      "finger": "ring",
+      "bend": 1.0,
+      "vel": 0.0199
+    },
+    {
+      "finger": "pinky",
+      "bend": 0.954,
+      "vel": 0.0299
+    },
+    {
+      "finger": "ring",
+      "bend": 1.0,
+      "vel": 0.0123
+    },
+    {
+      "finger": "middle",
+      "bend": 0.733,
+      "vel": 0.0369
+    },
+    {
+      "finger": "middle",
+      "bend": 0.894,
+      "vel": 0.0274
+    },
+    {
+      "finger": "middle",
+      "bend": 0.748,
+      "vel": 0.0232
+    }
+  ]
+}
