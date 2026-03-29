@@ -79,22 +79,31 @@ def _load_image_cache():
 def start_voice_listener(result_holder):
     """백그라운드에서 음성 인식 → result_holder["cmd"]에 결과 저장"""
     import speech_recognition as sr
+    try:
+        import pyaudio  # noqa: F401
+    except ImportError:
+        result_holder["cmd"] = "no_audio"
+        return threading.Thread(target=lambda: None, daemon=True)
 
     def _listen():
         recognizer = sr.Recognizer()
         try:
             with sr.Microphone() as source:
-                recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                aud = recognizer.listen(source, timeout=10, phrase_time_limit=4)
+                recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                aud = recognizer.listen(source, timeout=5, phrase_time_limit=4)
             text = recognizer.recognize_google(aud, language="ko-KR")
-            print(f"[음성인식] {text}")
             if "다시" in text:
                 result_holder["cmd"] = "replay"
             elif "악보" in text or "선택" in text:
                 result_holder["cmd"] = "select"
-        except Exception as e:
-            print(f"[음성인식 실패] {e}")
-            result_holder["cmd"] = None
+            else:
+                result_holder["cmd"] = "retry"
+        except sr.WaitTimeoutError:
+            result_holder["cmd"] = "retry"
+        except sr.UnknownValueError:
+            result_holder["cmd"] = "retry"
+        except Exception:
+            result_holder["cmd"] = "retry"
 
     t = threading.Thread(target=_listen, daemon=True)
     t.start()
@@ -111,7 +120,7 @@ def select_play_speed():
     ]
     selected     = None
     select_start = None
-    hold_sec     = 3
+    hold_sec     = 1
     btn_w = int(shared.WIN_W * 0.2)
     btn_h = int(shared.WIN_H * 0.12)
     gap   = int(shared.WIN_W * 0.05)
@@ -153,15 +162,7 @@ def select_play_speed():
                 select_start = time.time()
             else:
                 el       = time.time() - select_start
-                sec_left = max(1, min(3, math.ceil(hold_sec - el)))
-                tim_img  = shared._select_timer_imgs.get(sec_left)
-                if tim_img:
-                    shared.screen.blit(tim_img, (20, 20))
-                else:
-                    ui._draw_timer_fixed(
-                        ui.timer_text("선택까지", hold_sec - el),
-                        corner="tl", remain_secs=(hold_sec - el)
-                    )
+
                 if el >= hold_sec:
                     return hovered["delay"]
         else:
@@ -184,9 +185,9 @@ def select_play_speed():
 
 
 # ── yes / no 화면 ────────────────────────────────────────────────────
-def yes_no_screen(message, hold_sec=3, bg_img=None):
-    btn_w   = 488
-    btn_h   = 144
+def yes_no_screen(message, hold_sec=1, bg_img=None):
+    btn_w   = 500
+    btn_h   = 100
     yes_box = pygame.Rect(int(shared.WIN_W * 0.08), int(shared.WIN_H * 0.38),
                           btn_w, btn_h)
     no_box  = pygame.Rect(int(shared.WIN_W * 0.57), int(shared.WIN_H * 0.38),
@@ -222,15 +223,7 @@ def yes_no_screen(message, hold_sec=3, bg_img=None):
             if ys is None:
                 ys = time.time()
             el       = time.time() - ys
-            sec_left = max(1, min(3, math.ceil(hold_sec - el)))
-            tim_img  = shared._select_timer_imgs.get(sec_left)
-            if tim_img:
-                shared.screen.blit(tim_img, (20, 20))
-            else:
-                ui._draw_timer_fixed(
-                    ui.timer_text("선택까지", hold_sec - el),
-                    corner="tl", remain_secs=(hold_sec - el)
-                )
+
             if el >= hold_sec:
                 return True
         else:
@@ -240,15 +233,7 @@ def yes_no_screen(message, hold_sec=3, bg_img=None):
             if ns is None:
                 ns = time.time()
             el       = time.time() - ns
-            sec_left = max(1, min(3, math.ceil(hold_sec - el)))
-            tim_img  = shared._select_timer_imgs.get(sec_left)
-            if tim_img:
-                shared.screen.blit(tim_img, (20, 20))
-            else:
-                ui._draw_timer_fixed(
-                    ui.timer_text("선택까지", hold_sec - el),
-                    corner="tl", remain_secs=(hold_sec - el)
-                )
+
             if el >= hold_sec:
                 return False
         else:
@@ -284,7 +269,7 @@ def confirm_mode(chosen):
         print(f"confirm 이미지 로드 실패: {e}")
         img = None
 
-    ans = yes_no_screen("", hold_sec=2, bg_img=img)
+    ans = yes_no_screen("", hold_sec=1, bg_img=img)
     return ans is True
 
 
@@ -330,20 +315,20 @@ def welcome_screen():
 
 # ── 모드 선택 ─────────────────────────────────────────────────────────
 def mode_select():
+    _btn_w, _btn_h, _btn_gap = 500, 100, 40
+    _btn_x = (shared.WIN_W - _btn_w) // 2
+    _btn_y0 = (shared.WIN_H - (3 * _btn_h + 2 * _btn_gap)) // 2 + 80
     boxes = [
         {"name": "자유연주",  "img_key": "mode_free",
-         "rect": pygame.Rect(int(shared.WIN_W*0.33), int(shared.WIN_H*0.30),
-                             int(shared.WIN_W*0.35), int(shared.WIN_H*0.18))},
+         "rect": pygame.Rect(_btn_x, _btn_y0, _btn_w, _btn_h)},
         {"name": "따라연주",  "img_key": "mode_follow",
-         "rect": pygame.Rect(int(shared.WIN_W*0.33), int(shared.WIN_H*0.53),
-                             int(shared.WIN_W*0.35), int(shared.WIN_H*0.18))},
+         "rect": pygame.Rect(_btn_x, _btn_y0 + _btn_h + _btn_gap, _btn_w, _btn_h)},
         {"name": "도전연주",  "img_key": "mode_challenge",
-         "rect": pygame.Rect(int(shared.WIN_W*0.33), int(shared.WIN_H*0.76),
-                             int(shared.WIN_W*0.35), int(shared.WIN_H*0.18))},
+         "rect": pygame.Rect(_btn_x, _btn_y0 + 2 * (_btn_h + _btn_gap), _btn_w, _btn_h)},
     ]
     selected     = None
     select_start = None
-    hold_sec     = 3
+    hold_sec     = 1
     try:
         bg = pygame.image.load("assets/ui/mode_select_bg.png").convert_alpha()
         bg = pygame.transform.smoothscale(bg, (shared.WIN_W, shared.WIN_H))
@@ -397,15 +382,7 @@ def mode_select():
                 selected, select_start = hover, time.time()
             elif hover == selected:
                 el       = time.time() - select_start
-                sec_left = max(1, min(3, math.ceil(hold_sec - el)))
-                tim_img  = shared._select_timer_imgs.get(sec_left)
-                if tim_img:
-                    shared.screen.blit(tim_img, (20, 20))
-                else:
-                    ui._draw_timer_fixed(
-                        ui.timer_text("선택까지", hold_sec - el),
-                        corner="tl", remain_secs=(hold_sec - el)
-                    )
+
                 if el >= hold_sec:
                     if confirm_mode(hover["name"]):
                         return hover["name"]
@@ -436,6 +413,8 @@ def mode_select():
 def free_play_loop():
     mnm        = audio.MultiNoteManager(decay_time=1.5)
     note_label = None
+    start_time = time.time()
+    COOLDOWN   = 3.0
 
     FINGER_NUM_LABEL = {
         "pinky": "5", "ring": "4", "middle": "3",
@@ -458,6 +437,8 @@ def free_play_loop():
         ui.blit_camera_bg(rgb)
 
         pressed_notes = gesture.get_all_pressed_notes(res)
+        if time.time() - start_time < COOLDOWN:
+            pressed_notes = set()
         active_notes  = mnm.update(pressed_notes)
         gesture.is_index_press(res)
 
@@ -533,7 +514,7 @@ def score_practice_select():
 
     selected     = None
     select_start = None
-    hold_sec     = 3
+    hold_sec     = 1
 
     while True:
         ui.handle_common_events()
@@ -590,15 +571,7 @@ def score_practice_select():
                 select_start = time.time()
             else:
                 el       = time.time() - select_start
-                sec_left = max(1, min(3, math.ceil(hold_sec - el)))
-                tim_img  = shared._select_timer_imgs.get(sec_left)
-                if tim_img:
-                    shared.screen.blit(tim_img, (20, 20))
-                else:
-                    ui._draw_timer_fixed(
-                        ui.timer_text("선택까지", hold_sec - el),
-                        corner="tl", remain_secs=(hold_sec - el)
-                    )
+
                 if el >= hold_sec:
                     song_practice_flow(selected)
                     selected     = None
@@ -787,6 +760,7 @@ def song_practice_flow(song_name):
 
                 voice_result = {"cmd": None}
                 voice_thread = start_voice_listener(voice_result)
+                _voice_retry_time = 0
                 while True:
                     ui.handle_common_events()
                     rgb, _ = gesture.cam_frame_rgb()
@@ -831,9 +805,12 @@ def song_practice_flow(song_name):
                         return
                     elif voice_result["cmd"] == "select":
                         return
-                    if not voice_thread.is_alive() and voice_result["cmd"] is None:
-                        voice_result["cmd"] = None
-                        voice_thread = start_voice_listener(voice_result)
+                    if not voice_thread.is_alive() and voice_result["cmd"] not in ("replay", "select"):
+                        now = time.time()
+                        if now - _voice_retry_time >= 0.5:
+                            voice_result["cmd"] = None
+                            voice_thread = start_voice_listener(voice_result)
+                            _voice_retry_time = now
                     pygame.display.flip()
 
         pygame.display.flip()
@@ -864,7 +841,7 @@ def challenge_practice_select():
 
     selected     = None
     select_start = None
-    hold_sec     = 3
+    hold_sec     = 1
 
     while True:
         ui.handle_common_events()
@@ -921,15 +898,7 @@ def challenge_practice_select():
                 select_start = time.time()
             else:
                 el       = time.time() - select_start
-                sec_left = max(1, min(3, math.ceil(hold_sec - el)))
-                tim_img  = shared._select_timer_imgs.get(sec_left)
-                if tim_img:
-                    shared.screen.blit(tim_img, (20, 20))
-                else:
-                    ui._draw_timer_fixed(
-                        ui.timer_text("선택까지", hold_sec - el),
-                        corner="tl", remain_secs=(hold_sec - el)
-                    )
+
                 if el >= hold_sec:
                     challenge_practice_flow(selected)
                     selected     = None
@@ -1119,6 +1088,7 @@ def challenge_practice_flow(song_name):
 
             voice_result = {"cmd": None}
             voice_thread = start_voice_listener(voice_result)
+            _voice_retry_time = 0
             while True:
                 ui.handle_common_events()
                 rgb, _ = gesture.cam_frame_rgb()
@@ -1155,9 +1125,12 @@ def challenge_practice_flow(song_name):
                     return
                 elif voice_result["cmd"] == "select":
                     return
-                if not voice_thread.is_alive() and voice_result["cmd"] is None:
-                    voice_result["cmd"] = None
-                    voice_thread = start_voice_listener(voice_result)
+                if not voice_thread.is_alive() and voice_result["cmd"] not in ("replay", "select"):
+                    now = time.time()
+                    if now - _voice_retry_time >= 0.5:
+                        voice_result["cmd"] = None
+                        voice_thread = start_voice_listener(voice_result)
+                        _voice_retry_time = now
                 pygame.display.flip()
 
         ui.blit_camera_bg(rgb)

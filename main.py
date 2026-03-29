@@ -70,7 +70,6 @@ CUR      = {"piano": PROFILES["easy"]}
 # ── 메인 함수 ─────────────────────────────────────────────────────────
 def main():
     while True:
-        game_modes.welcome_screen()
         CUR["piano"] = PROFILES["easy"]
         ret = game_modes.mode_select_and_run()
         if ret == "BACK_TO_DIFFICULTY":

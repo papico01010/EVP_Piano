@@ -7,7 +7,6 @@ import math
 import time
 import numpy as np
 import pygame
-
 import shared
 import gesture
 
