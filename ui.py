@@ -11,8 +11,13 @@ import shared
 import gesture
 
 
+# ── 피아노 베이스 이미지 캐시 ─────────────────────────────────────────
+_piano_base_img = None   # basic_piano_st.png 스케일된 Surface
+
+
 # ── 피아노 레이아웃 초기화 ────────────────────────────────────────────
 def _init_piano_layout():
+    global _piano_base_img
     n_white = len(shared.PIANO_WHITE_NOTES)  # 14 (2옥타브)
 
     shared.PIANO_W = int(shared.WIN_W * 0.85)
@@ -42,6 +47,15 @@ def _init_piano_layout():
         shared._piano_key_boxes[note] = pygame.Rect(
             x, shared.PIANO_Y, shared.BLACK_W, shared.BLACK_H
         )
+
+    # 피아노 베이스 이미지 로드 (PIANO_W × PIANO_H 로 스케일)
+    try:
+        img = pygame.image.load("assets/basic_piano_st.png").convert_alpha()
+        _piano_base_img = pygame.transform.smoothscale(
+            img, (shared.PIANO_W, shared.PIANO_H)
+        )
+    except Exception:
+        _piano_base_img = None
 
 
 def _toggle_fullscreen():
@@ -500,36 +514,40 @@ def draw_piano_profile(user_note=None, program_note=None,
     if user_note:
         notes_to_draw.add(user_note)
 
-    bg = pygame.Surface((shared.PIANO_W + 10, shared.PIANO_H + 10), pygame.SRCALPHA)
-    bg.fill((30, 30, 30, 80))
-    shared.screen.blit(bg, (shared.PIANO_X - 5, shared.PIANO_Y - 5))
+    # ── 피아노 베이스 이미지 ──────────────────────────────────────────
+    if _piano_base_img is not None:
+        shared.screen.blit(_piano_base_img, (shared.PIANO_X, shared.PIANO_Y))
+    else:
+        # 이미지 없을 때 폴백: 어두운 배경 rect
+        bg = pygame.Surface((shared.PIANO_W + 10, shared.PIANO_H + 10), pygame.SRCALPHA)
+        bg.fill((30, 30, 30, 80))
+        shared.screen.blit(bg, (shared.PIANO_X - 5, shared.PIANO_Y - 5))
 
+    # ── 흰 건반 눌림 하이라이트 ──────────────────────────────────────
     for note in shared.PIANO_WHITE_NOTES:
         r = shared._piano_key_boxes[note]
         if note == program_note:
-            col = (60, 220, 100)
+            col = (60, 220, 100, 160)
         elif note in notes_to_draw:
-            col = (80, 160, 255)
+            col = (80, 160, 255, 160)
         else:
-            col = None
-        if col:
-            pygame.draw.rect(shared.screen, col, r, border_radius=3)
-        else:
-            s = pygame.Surface((r.width, r.height), pygame.SRCALPHA)
-            s.fill((255, 255, 255, 100))
-            shared.screen.blit(s, r.topleft)
-        pygame.draw.rect(shared.screen, (80, 80, 80), r, 1, border_radius=3)
+            continue
+        s = pygame.Surface((r.width, r.height), pygame.SRCALPHA)
+        s.fill(col)
+        shared.screen.blit(s, r.topleft)
 
+    # ── 검은 건반 눌림 하이라이트 ────────────────────────────────────
     for note in shared.PIANO_BLACK_NOTES:
         r = shared._piano_key_boxes[note]
         if note == program_note:
-            col = (60, 200, 80)
+            col = (60, 200, 80, 180)
         elif note in notes_to_draw:
-            col = (40, 100, 220)
+            col = (40, 100, 220, 180)
         else:
-            col = (30, 30, 30)
-        pygame.draw.rect(shared.screen, col, r, border_radius=2)
-        pygame.draw.rect(shared.screen, (0, 0, 0), r, 1, border_radius=2)
+            continue
+        s = pygame.Surface((r.width, r.height), pygame.SRCALPHA)
+        s.fill(col)
+        shared.screen.blit(s, r.topleft)
 
 
 def draw_note_banner(text):
