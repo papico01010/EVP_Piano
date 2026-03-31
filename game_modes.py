@@ -1,6 +1,7 @@
 """
 game_modes.py - 게임 플로우 모듈
 """
+import pyttsx3
 import sys
 import math
 import time
@@ -258,10 +259,29 @@ def yes_no_screen(message, hold_sec=1, bg_img=None):
 def confirm_mode(chosen):
     if chosen == "자유연주":
         img_key = "confirm_free"
+        tts_msg = "자유연주에서는 자유롭게 피아노를 연주할 수 있어요. 자유연주를 플레이 하실 건가요?"
     elif chosen == "따라연주":
         img_key = "confirm_follow"
+        tts_msg = "따라연주에서는 원하는 악보를 선택한 후 가이드 건반을 따라 피아노를 연주할 수 있어요. 따라연주를 플레이 하실 건가요?"
     else:
         img_key = "confirm_challenge"
+        tts_msg = "도전연주에서는 원하는 악보를 선택한 후 가이드 건반 없이 악보를 보며 연주해야 해요. 올바른 연주를 통해 높은 등급에 도전해보세요. 도전연주를 플레이 하실 건가요?"
+
+    import pyttsx3
+    import threading
+
+    def _speak():
+        try:
+            engine = pyttsx3.init()
+            engine.setProperty("rate", 160)
+            engine.setProperty("volume", 1.0)
+            engine.say(tts_msg)
+            engine.runAndWait()
+        except Exception:
+            pass
+
+    threading.Thread(target=_speak, daemon=True).start()
+
     try:
         img = pygame.image.load(f"assets/ui/{img_key}.png").convert_alpha()
         img = pygame.transform.smoothscale(img, (shared.WIN_W, shared.WIN_H))
@@ -273,44 +293,44 @@ def confirm_mode(chosen):
     return ans is True
 
 
-# ── 웰컴 화면 ─────────────────────────────────────────────────────────
-def welcome_screen():
-    try:
-        img = pygame.image.load("assets/ui/welcome.png").convert_alpha()
-        img = pygame.transform.smoothscale(img, (shared.WIN_W, shared.WIN_H))
-    except Exception:
-        img = None
+# # ── 웰컴 화면 ─────────────────────────────────────────────────────────
+# def welcome_screen():
+#     try:
+#         img = pygame.image.load("assets/ui/welcome.png").convert_alpha()
+#         img = pygame.transform.smoothscale(img, (shared.WIN_W, shared.WIN_H))
+#     except Exception:
+#         img = None
 
-    st = time.time()
-    while time.time() - st < 5:
-        ui.handle_common_events()
-        rgb, _ = gesture.cam_frame_rgb()
-        if rgb is None:
-            continue
-        res = shared.hands.process(rgb)
-        ui.blit_camera_bg(rgb)
+#     st = time.time()
+#     while time.time() - st < 5:
+#         ui.handle_common_events()
+#         rgb, _ = gesture.cam_frame_rgb()
+#         if rgb is None:
+#             continue
+#         res = shared.hands.process(rgb)
+#         ui.blit_camera_bg(rgb)
 
-        if img:
-            shared.screen.blit(img, (0, 0))
-        else:
-            ui.draw_lines_center(
-                ["EVP에 온 걸 환영해용"],
-                y_start=shared.WIN_H // 2 - 60,
-                size="mid", line_gap=14,
-            )
+#         if img:
+#             shared.screen.blit(img, (0, 0))
+#         else:
+#             ui.draw_lines_center(
+#                 ["EVP에 온 걸 환영해용"],
+#                 y_start=shared.WIN_H // 2 - 60,
+#                 size="mid", line_gap=14,
+#             )
 
-        tip = gesture.get_index_tip_xy(res)
-        if tip:
-            if shared._tip_img:
-                shared.screen.blit(shared._tip_img, (tip[0] - 40, tip[1] - 40))
-            else:
-                pygame.draw.circle(shared.screen, (255, 255, 0), tip, 12, 0)
+#         tip = gesture.get_index_tip_xy(res)
+#         if tip:
+#             if shared._tip_img:
+#                 shared.screen.blit(shared._tip_img, (tip[0] - 40, tip[1] - 40))
+#             else:
+#                 pygame.draw.circle(shared.screen, (255, 255, 0), tip, 12, 0)
 
-        r = ui.update_back_and_exit_timers(res, inhibit_back=True)
-        if r == "EXIT":
-            pygame.quit(); sys.exit()
+#         r = ui.update_back_and_exit_timers(res, inhibit_back=True)
+#         if r == "EXIT":
+#             pygame.quit(); sys.exit()
 
-        pygame.display.flip()
+#         pygame.display.flip()
 
 
 # ── 모드 선택 ─────────────────────────────────────────────────────────
@@ -446,15 +466,10 @@ def free_play_loop():
             note_to_kor(n) for n in sorted(active_notes)
         ) if active_notes else None
 
-        ui.draw_title_banner("자유 연주", top_pad=18)
         ui.draw_and_debug(
             user_notes=pressed_notes,
             program_note=None,
-            note_label_text=note_label,
-        )
-        ui.draw_lines_center(
-            ["손가락을 살짝 굽혀 건반을 눌러요.", "주먹(1)=뒤로, 두 주먹=종료"],
-            120, size="tiny", line_gap=6,
+            note_label_text=None,
         )
 
         if res and res.multi_hand_landmarks:

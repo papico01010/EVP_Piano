@@ -44,6 +44,21 @@ except Exception:
 # ── 6. 공유 상태 초기화 ───────────────────────────────────────────────
 shared.init_shared(_screen, _clock, _hands, _cam)
 
+import pyttsx3
+import threading
+
+def _speak_welcome():
+    try:
+        engine = pyttsx3.init()
+        engine.setProperty("rate", 160)
+        engine.setProperty("volume", 1.0)
+        engine.say("버츄얼 피아노 학습에 오신 걸 환영해요. 자유연주, 따라연주, 도전연주 중 하나를 선택해주세요.")
+        engine.runAndWait()
+    except Exception:
+        pass
+
+threading.Thread(target=_speak_welcome, daemon=True).start()
+
 # ── 7. 피아노 레이아웃 초기화 ─────────────────────────────────────────
 import ui
 ui._init_piano_layout()

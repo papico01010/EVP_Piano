@@ -11,42 +11,59 @@ import shared
 import gesture
 
 
-# ── 피아노 베이스 이미지 캐시 ─────────────────────────────────────────
-_piano_base_img = None   # basic_piano_st.png 스케일된 Surface
+# ── 이미지 캐시 ───────────────────────────────────────────────────────
+_game_bg_img     = None   # assets/ui/game_bg.png - 전체 화면 뒷배경
+_piano_base_img  = None   # basic_piano_st.png 스케일된 Surface
+_prog_push_imgs: dict = {}   # {"C": Surface, "Cs": Surface, ...}
+_user_push_imgs: dict = {}   # {"C": Surface, "Cs": Surface, ...}
+
+_NOTE_BASES = [
+    "C4", "Cs4", "D4", "Ds4", "E4", "F4", "Fs4", "G4", "Gs4", "A4", "As4", "B4",
+    "C5", "Cs5", "D5", "Ds5", "E5", "F5", "Fs5", "G5", "Gs5", "A5", "As5", "B5",
+]
 
 
 # ── 피아노 레이아웃 초기화 ────────────────────────────────────────────
 def _init_piano_layout():
-    global _piano_base_img
+    global _game_bg_img, _piano_base_img, _prog_push_imgs, _user_push_imgs
     n_white = len(shared.PIANO_WHITE_NOTES)  # 14 (2옥타브)
 
-    shared.PIANO_W = int(shared.WIN_W * 0.85)
-    shared.PIANO_H = int(shared.WIN_H * 0.42)
-    shared.WHITE_W = shared.PIANO_W // n_white
-    shared.WHITE_H = shared.PIANO_H
-    shared.BLACK_W = int(shared.WHITE_W * 0.6)
-    shared.BLACK_H = int(shared.WHITE_H * 0.62)
-
-    shared.PIANO_X = (shared.WIN_W - shared.PIANO_W) // 2
-    shared.PIANO_Y = (shared.WIN_H - shared.PIANO_H) // 2
-
+    # basic_piano_st(1280*720) 비율 수정
+    shared.PIANO_W = int(shared.WIN_W) # basic_piano_st 전체 너비
+    shared.PIANO_H = int(shared.WIN_H) # basic_piano_st 전체 높이
+    shared.PIANO_X = 0
+    shared.PIANO_Y = 0
+    # 흰건반 (w : 89px / h : 379px)
+    shared.WHITE_W = (int(shared.PIANO_W-100) // n_white) # 흰건반 너비
+    shared.WHITE_H = int(shared.PIANO_H-341) # 흰건반 높이
+    # 검정건반
+    shared.BLACK_W = int(shared.WHITE_W * 0.6) # 검은건반 너비 = 흰건반너비의 60%
+    shared.BLACK_H = int(shared.WHITE_H * 0.62) # 검은건반 높이 = 흰건반높이의 62%
     shared._piano_key_boxes.clear()
 
-    for i, note in enumerate(shared.PIANO_WHITE_NOTES):
-        x = shared.PIANO_X + i * shared.WHITE_W
-        shared._piano_key_boxes[note] = pygame.Rect(
-            x, shared.PIANO_Y, shared.WHITE_W - 2, shared.WHITE_H
-        )
-
-    black_positions = {
-        "Cs4": 0,  "Ds4": 1,  "Fs4": 3,  "Gs4": 4,  "As4": 5,
-        "Cs5": 7,  "Ds5": 8,  "Fs5": 10, "Gs5": 11, "As5": 12,
+    OFFSET_X = 50
+    WHITE_X = {
+        "C4": 0,    "D4": 85,   "E4": 169,  "F4": 253,
+        "G4": 338,  "A4": 442,  "B4": 506,
+        "C5": 590,  "D5": 675,  "E5": 759,  "F5": 843,
+        "G5": 928,  "A5": 1012, "B5": 1096,
     }
-    for note, white_idx in black_positions.items():
-        x = shared.PIANO_X + white_idx * shared.WHITE_W + shared.WHITE_W - shared.BLACK_W // 2
-        shared._piano_key_boxes[note] = pygame.Rect(
-            x, shared.PIANO_Y, shared.BLACK_W, shared.BLACK_H
-        )
+    for note, x in WHITE_X.items():
+        shared._piano_key_boxes[note] = pygame.Rect(x + OFFSET_X, 185, 89, 379)
+
+    BLACK_X = {
+        "Cs4": 59,  "Ds4": 143, "Fs4": 311, "Gs4": 396, "As4": 480,
+        "Cs5": 649, "Ds5": 733, "Fs5": 901, "Gs5": 986, "As5": 1070,
+    }
+    for note, x in BLACK_X.items():
+        shared._piano_key_boxes[note] = pygame.Rect(x + OFFSET_X, 185, 51, 184)
+
+    # 전체 화면 뒷배경 이미지 로드
+    try:
+        _bg = pygame.image.load("assets/ui/game_bg.png").convert()
+        _game_bg_img = pygame.transform.smoothscale(_bg, (shared.WIN_W, shared.WIN_H))
+    except Exception:
+        _game_bg_img = None
 
     # 피아노 베이스 이미지 로드 (PIANO_W × PIANO_H 로 스케일)
     try:
@@ -56,6 +73,23 @@ def _init_piano_layout():
         )
     except Exception:
         _piano_base_img = None
+
+    # 건반 오버레이 이미지 로드 (옥타브 무관 - 베이스 음이름만 사용)
+    # program_push_C.png, user_push_C.png 등 → C4/C5 공용
+    _prog_push_imgs.clear()
+    _user_push_imgs.clear()
+    for _note in _NOTE_BASES:
+        for _prefix, _store in [("program_push", _prog_push_imgs),
+                                ("user_push",    _user_push_imgs)]:
+            try:
+                _img = pygame.image.load(
+                    f"assets/{_prefix}_{_note}.png"
+                ).convert_alpha()
+                _store[_note] = pygame.transform.smoothscale(
+                    _img, (int(shared.WIN_W), int(shared.WIN_H))
+                )
+            except Exception:
+                _store[_note] = None
 
 
 def _toggle_fullscreen():
@@ -88,9 +122,12 @@ def handle_common_events():
 
 # ── 카메라 배경 ───────────────────────────────────────────────────────
 def blit_camera_bg(rgb):
-    surf = pygame.surfarray.make_surface(np.flipud(np.rot90(rgb)))
-    surf = pygame.transform.scale(surf, (shared.WIN_W, shared.WIN_H))
-    shared.screen.blit(surf, (0, 0))
+    if _game_bg_img is not None:
+        shared.screen.blit(_game_bg_img, (0, 0))
+    else:
+        surf = pygame.surfarray.make_surface(np.flipud(np.rot90(rgb)))
+        surf = pygame.transform.scale(surf, (shared.WIN_W, shared.WIN_H))
+        shared.screen.blit(surf, (0, 0))
 
 
 # ── 텍스트/배너 렌더링 ────────────────────────────────────────────────
@@ -329,25 +366,25 @@ def make_notes_48(start_oct=2, octaves=4):
             seq.append(f"{n}{oc}")
     return seq
 
-
+# 건반 판정
 def build_key_layout_12(w, h, notes):
     boxes = {}
-    top  = int(0.08 * h)
-    h_w  = int(0.78 * h)
-    h_bk = int(0.48 * h)
-    w_w  = w / 7.0
-    w_bk = w_w * 0.60
-    xs   = [i * w_w for i in range(7)]
-    for note, idx in [("C", 0), ("D", 1), ("E", 2), ("F", 3),
-                      ("G", 4), ("A", 5), ("B", 6)]:
-        full = f"{note}4"
-        boxes[full] = pygame.Rect(int(xs[idx]), top, int(w_w), h_w)
-    black_pairs = [("Cs", 0), ("Ds", 1), ("Fs", 3), ("Gs", 4), ("As", 5)]
-    for note, i_white in black_pairs:
-        full      = f"{note}4"
-        center_x  = (i_white + 1.0) * w_w
-        x         = int(center_x - w_bk / 2)
-        boxes[full] = pygame.Rect(x, top, int(w_bk), h_bk)
+    WHITE_X = {
+        "C4": 0,    "D4": 85,   "E4": 169,  "F4": 253,
+        "G4": 338,  "A4": 442,  "B4": 506,
+        "C5": 590,  "D5": 675,  "E5": 759,  "F5": 843,
+        "G5": 928,  "A5": 1012, "B5": 1096,
+    }
+    for note, x in WHITE_X.items():
+        boxes[note] = pygame.Rect(x, 28, 89, 379)
+
+    BLACK_X = {
+        "Cs4": 59,  "Ds4": 143, "Fs4": 311, "Gs4": 396, "As4": 480,
+        "Cs5": 649, "Ds5": 733, "Fs5": 901, "Gs5": 986, "As5": 1070,
+    }
+    for note, x in BLACK_X.items():
+        boxes[note] = pygame.Rect(x, 28, 51, 184)
+
     return boxes
 
 
@@ -523,31 +560,17 @@ def draw_piano_profile(user_note=None, program_note=None,
         bg.fill((30, 30, 30, 80))
         shared.screen.blit(bg, (shared.PIANO_X - 5, shared.PIANO_Y - 5))
 
-    # ── 흰 건반 눌림 하이라이트 ──────────────────────────────────────
-    for note in shared.PIANO_WHITE_NOTES:
-        r = shared._piano_key_boxes[note]
-        if note == program_note:
-            col = (60, 220, 100, 160)
-        elif note in notes_to_draw:
-            col = (80, 160, 255, 160)
-        else:
-            continue
-        s = pygame.Surface((r.width, r.height), pygame.SRCALPHA)
-        s.fill(col)
-        shared.screen.blit(s, r.topleft)
+    # ── 건반 오버레이 (이미지 우선 → 없으면 색상 rect 폴백) ──────────
+    # 프로그램(가이드) 건반
+    if program_note:
+        img = _prog_push_imgs.get(program_note)
+        if img:
+            shared.screen.blit(img, (0, 0))
 
-    # ── 검은 건반 눌림 하이라이트 ────────────────────────────────────
-    for note in shared.PIANO_BLACK_NOTES:
-        r = shared._piano_key_boxes[note]
-        if note == program_note:
-            col = (60, 200, 80, 180)
-        elif note in notes_to_draw:
-            col = (40, 100, 220, 180)
-        else:
-            continue
-        s = pygame.Surface((r.width, r.height), pygame.SRCALPHA)
-        s.fill(col)
-        shared.screen.blit(s, r.topleft)
+    for note in notes_to_draw:
+        img = _user_push_imgs.get(note)
+        if img:
+            shared.screen.blit(img, (0, 0))
 
 
 def draw_note_banner(text):
@@ -571,9 +594,8 @@ def draw_note_banner(text):
     shared.screen.blit(shadow, (x + pad_x + 3, y + pad_y + 3))
     shared.screen.blit(label,  (x + pad_x,     y + pad_y))
 
-
 def draw_hitbox_overlay():
-    if not shared.DEBUG_HITBOX.get("hitbox"):
+    if not shared.DEBUG_HITBOX.get("on"):
         return
     if not shared._piano_key_boxes:
         return

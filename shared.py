@@ -8,7 +8,7 @@ import glob
 import pygame
 
 # ── 디버그 플래그 ──────────────────────────────────────────────────────
-DEBUG_HITBOX = {"on": False, "press": False, "hyst": False}
+DEBUG_HITBOX = {"on": False, "hitbox": False, "press": False, "hyst": False}
 PRESS_DBG    = {"pip": 0.0, "dip": 0.0, "lenr": 0.0, "bend": 0.0,
                 "avg": 0.0, "pressed": False, "series": []}
 
