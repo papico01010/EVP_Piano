@@ -71,6 +71,7 @@ def _init_piano_layout():
         _piano_base_img = pygame.transform.smoothscale(
             img, (shared.PIANO_W, shared.PIANO_H)
         )
+        _piano_base_img.set_alpha(102)
     except Exception:
         _piano_base_img = None
 
@@ -122,12 +123,12 @@ def handle_common_events():
 
 # ── 카메라 배경 ───────────────────────────────────────────────────────
 def blit_camera_bg(rgb):
+    cam_surf = pygame.surfarray.make_surface(np.flipud(np.rot90(rgb)))
+    cam_surf = pygame.transform.scale(cam_surf, (shared.WIN_W, shared.WIN_H))
+    shared.screen.blit(cam_surf, (0, 0))
     if _game_bg_img is not None:
+        _game_bg_img.set_alpha(102)
         shared.screen.blit(_game_bg_img, (0, 0))
-    else:
-        surf = pygame.surfarray.make_surface(np.flipud(np.rot90(rgb)))
-        surf = pygame.transform.scale(surf, (shared.WIN_W, shared.WIN_H))
-        shared.screen.blit(surf, (0, 0))
 
 
 # ── 텍스트/배너 렌더링 ────────────────────────────────────────────────
@@ -774,3 +775,5 @@ def draw_and_debug(user_note=None, program_note=None,
     draw_hitbox_overlay()
     if note_label_text:
         draw_note_banner(note_label_text)
+
+

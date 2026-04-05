@@ -34,9 +34,11 @@ FONT_FILE:   str                = None
 font_huge:   pygame.font.Font   = None
 font_big:    pygame.font.Font   = None
 font_mid:    pygame.font.Font   = None
-font_small:  pygame.font.Font   = None
-font_tiny:   pygame.font.Font   = None
-font_micro:  pygame.font.Font   = None
+font_small:       pygame.font.Font   = None
+font_small_bold:  pygame.font.Font   = None
+font_tiny:        pygame.font.Font   = None
+font_micro:       pygame.font.Font   = None
+font_micro_bold:  pygame.font.Font   = None
 
 # ── MediaPipe / 카메라 (init_shared()에서 채워짐) ─────────────────────
 hands = None   # mp_hands.Hands 인스턴스
@@ -91,6 +93,9 @@ _tip_img = None
 
 ASSETS = "assets"
 
+# ── 로그인 상태 ────────────────────────────────────────────────────────
+current_user: str = None   # 현재 로그인된 유저명
+
 
 # ── 폰트 헬퍼 ─────────────────────────────────────────────────────────
 def _pick_font_path():
@@ -116,6 +121,17 @@ def _font(size):
         return pygame.font.SysFont(None, size)
 
 
+def _font_bold(size):
+    try:
+        if FONT_FILE:
+            f = pygame.font.Font(FONT_FILE, size)
+            f.bold = True
+            return f
+        return pygame.font.SysFont(None, size, bold=True)
+    except Exception:
+        return pygame.font.SysFont(None, size, bold=True)
+
+
 # ── init_shared: main.py에서 pygame 초기화 후 호출 ───────────────────
 def init_shared(
     _screen: pygame.Surface,
@@ -126,7 +142,7 @@ def init_shared(
     """pygame/mediapipe/cv2 초기화 완료 후 공유 변수를 채운다."""
     global screen, clock, WIN_W, WIN_H
     global FONT_FILE
-    global font_huge, font_big, font_mid, font_small, font_tiny, font_micro
+    global font_huge, font_big, font_mid, font_small, font_small_bold, font_tiny, font_micro, font_micro_bold
     global hands, cam
     global _tip_img, _select_timer_imgs, _back_timer_imgs, _exit_timer_imgs
 
@@ -142,9 +158,11 @@ def init_shared(
     font_huge  = _font(110)
     font_big   = _font(90)
     font_mid   = _font(66)
-    font_small = _font(46)
+    font_small      = _font(46)
+    font_small_bold = _font_bold(46)
     font_tiny  = _font(34)
     font_micro = _font(28)
+    font_micro_bold = _font_bold(22)
 
     # 커서 이미지
     try:

@@ -12,6 +12,7 @@ import shared
 import audio
 import gesture
 import ui
+import auth
 
 
 # ── 음악 유틸 ─────────────────────────────────────────────────────────
@@ -441,11 +442,11 @@ def free_play_loop():
         "index": "2", "thumb": "1",
     }
     FINGER_PRESSED_COL = {
-        "pinky":  (255, 100, 100),
-        "ring":   (255, 180,  60),
-        "middle": ( 80, 220, 100),
-        "index":  ( 60, 200, 255),
-        "thumb":  (200, 100, 255),
+        "pinky":  (135, 206, 250),
+        "ring":   (135, 206, 250),
+        "middle": (135, 206, 250),
+        "index":  (135, 206, 250),
+        "thumb":  (135, 206, 250),
     }
 
     while True:
@@ -492,8 +493,8 @@ def free_play_loop():
                     num_str = FINGER_NUM_LABEL[fname]
                     col     = FINGER_PRESSED_COL[fname] \
                         if vel >= gesture.PRESS_VEL_TH else (255, 255, 255)
-                    lbl    = shared.font_small.render(num_str, True, col)
-                    shadow = shared.font_small.render(num_str, True, (0, 0, 0))
+                    lbl    = shared.font_small_bold.render(num_str, True, col)
+                    shadow = shared.font_small_bold.render(num_str, True, (0, 0, 0))
                     cx = tx - lbl.get_width()  // 2
                     cy = ty - lbl.get_height() // 2
                     shared.screen.blit(shadow, (cx + 2, cy + 2))
@@ -518,18 +519,69 @@ def score_practice_select():
     except Exception:
         song_bg = None
 
+    SONG_KEYS = {
+        "반짝반짝": "twinkle", "생축": "birthday", "징글벨": "jingle",
+        "리틀람": "littlelamb", "환희": "ode", "런던": "london",
+        "나비야나비야": "butterfly", "세인츠": "saints", "로우로우로우": "rowrow", "양키": "yankee",
+    }
+    try:
+        _start_n = pygame.image.load("assets/ui/song_start_normal.png").convert_alpha()
+        _start_n = pygame.transform.smoothscale(_start_n, (260, 58))
+    except Exception:
+        _start_n = None
+    try:
+        _start_h = pygame.image.load("assets/ui/song_start_hover.png").convert_alpha()
+        _start_h = pygame.transform.smoothscale(_start_h, (260, 58))
+    except Exception:
+        _start_h = None
+    _speed_imgs = {}
+    for _sk in ["slow", "mid", "fast"]:
+        try:
+            _sn = pygame.image.load(f"assets/ui/speed_{_sk}_normal.png").convert_alpha()
+            _sn = pygame.transform.smoothscale(_sn, (72, 33))
+        except Exception:
+            _sn = None
+        try:
+            _sh = pygame.image.load(f"assets/ui/speed_{_sk}_hover.png").convert_alpha()
+            _sh = pygame.transform.smoothscale(_sh, (72, 33))
+        except Exception:
+            _sh = None
+        _speed_imgs[_sk] = {"normal": _sn, "hover": _sh}
+    try:
+        _speed_bg = pygame.image.load("assets/ui/speed_select_bg.png").convert_alpha()
+    except Exception:
+        _speed_bg = None
     song_imgs = {}
     for _name in song_names:
+        _key = SONG_KEYS.get(_name, _name)
         try:
-            _n = pygame.image.load(f"assets/ui/song_{_name}_normal.png").convert_alpha()
-            _a = pygame.image.load(f"assets/ui/song_{_name}_active.png").convert_alpha()
-            song_imgs[_name] = {"normal": _n, "active": _a}
+            _n = pygame.image.load(f"assets/ui/song_{_key}_normal.png").convert_alpha()
         except Exception:
-            song_imgs[_name] = {"normal": None, "active": None}
+            _n = None
+        try:
+            _h = pygame.image.load(f"assets/ui/song_{_key}_hover.png").convert_alpha()
+        except Exception:
+            _h = None
+        try:
+            _p = pygame.image.load(f"assets/ui/song_{_key}_preview.png").convert_alpha()
+            _p = pygame.transform.smoothscale(_p, (260, 376)) # _preview.png 위치
+        except Exception:
+            _p = None
+        song_imgs[_name] = {"normal": _n, "hover": _h, "preview": _p}
 
-    selected     = None
-    select_start = None
-    hold_sec     = 1
+    selected        = None
+    select_start    = None
+    hold_sec        = 1
+    btn_hover       = None
+    btn_hover_start = None
+    preview_song    = None
+    selected_speed  = "mid"
+    BTN_HOLD_SEC    = 1
+    SPEED_DELAYS    = {"slow": 0.7, "mid": 0.4, "fast": 0.25}
+    SPEED_POSITIONS = [("slow", 921, 576), ("mid", 1000, 576), ("fast", 1078, 576)] 
+    # speed 버튼 세 개 x 871 950 1028 / y 576
+    # 1차수정 : x + 20
+    # 2차 : x + 40
 
     while True:
         ui.handle_common_events()
@@ -544,35 +596,96 @@ def score_practice_select():
 
         tip = gesture.get_index_tip_xy(res)
 
-        btn_w   = int(shared.WIN_W * 0.25)
-        btn_h   = int(shared.WIN_H * 0.13)
-        gap     = int(shared.WIN_H * 0.02)
-        start_y = int(shared.WIN_H * 0.23)
+        # 악보 버튼 툴
+        PANEL_X, PANEL_Y = 130, 140
+        PANEL_W, PANEL_H = 734, 545
+        BTN_W,   BTN_H   = 352, 97
+        gap              = 10
 
-        hovered = None
-        col_x   = [int(shared.WIN_W * 0.15), int(shared.WIN_W * 0.55)]
+        raw_hovered = None
         for i, name in enumerate(song_names):
             col = i // 5
             row = i % 5
-            x   = col_x[col]
-            y   = start_y + row * (btn_h + gap)
-            r   = pygame.Rect(x, y, btn_w, btn_h)
-            img_set = song_imgs.get(name)
-            if img_set and img_set.get("normal") and img_set.get("active"):
-                state    = "active" if (tip and r.collidepoint(tip)) else "normal"
+            x   = PANEL_X + col * (BTN_W + gap)
+            y   = PANEL_Y + gap + row * (BTN_H + gap)
+            r   = pygame.Rect(x, y, BTN_W, BTN_H)
+            img_set    = song_imgs.get(name)
+            is_hov     = bool(tip and r.collidepoint(tip))
+            is_preview = (name == preview_song)
+            if img_set and img_set.get("normal"):
+                state    = "hover" if is_preview and img_set.get("hover") else "normal"
                 base_img = img_set[state]
-                scaled   = pygame.transform.smoothscale(base_img, (r.width, r.height))
+                scaled   = pygame.transform.smoothscale(base_img, (BTN_W, BTN_H))
                 shared.screen.blit(scaled, r.topleft)
             else:
-                c = (100, 180, 255) if (tip and r.collidepoint(tip)) else (60, 60, 60)
+                c = (100, 180, 255) if is_preview else (60, 60, 60)
                 pygame.draw.rect(shared.screen, c, r, border_radius=8)
                 lbl = shared.font_micro.render(name, True, (255, 255, 255))
                 shared.screen.blit(
                     lbl, (r.centerx - lbl.get_width()  // 2,
-                          r.centery - lbl.get_height() // 2)
+                        r.centery - lbl.get_height() // 2)
                 )
-            if tip and r.collidepoint(tip):
-                hovered = name
+            if is_hov:
+                raw_hovered = name
+
+        # 1초 hover → preview 활성화 (손가락이 버튼 밖에 있으면 타이머 초기화)
+        if raw_hovered:
+            if raw_hovered != btn_hover:
+                btn_hover       = raw_hovered
+                btn_hover_start = time.time()
+        else:
+            btn_hover       = None
+            btn_hover_start = None
+        if btn_hover and btn_hover_start and (time.time() - btn_hover_start >= BTN_HOLD_SEC):
+            if preview_song != btn_hover:
+                preview_song = btn_hover
+                selected     = None
+                select_start = None
+
+        if preview_song:
+            _prev = song_imgs.get(preview_song, {}).get("preview")
+            if _prev:
+                shared.screen.blit(_prev, (906, 147))
+
+            # 속도 선택 배경 + 버튼
+            if _speed_bg:
+                _speed_bg_scaled = pygame.transform.smoothscale(_speed_bg, (260, 86))
+                shared.screen.blit(_speed_bg_scaled, (906, 537))
+            for _sk, _sx, _sy in SPEED_POSITIONS:
+                _sr = pygame.Rect(_sx, _sy, 72, 33)
+                _is_shov = bool(tip and _sr.collidepoint(tip))
+                _is_ssel = (selected_speed == _sk)
+                _simg = _speed_imgs[_sk].get("hover" if (_is_shov or _is_ssel) else "normal")
+                if _simg:
+                    shared.screen.blit(_simg, _sr.topleft)
+                else:
+                    _sc = (100, 180, 255) if (_is_shov or _is_ssel) else (60, 60, 60)
+                    pygame.draw.rect(shared.screen, _sc, _sr, border_radius=4)
+                if _is_shov:
+                    selected_speed = _sk
+
+            start_rect = pygame.Rect(906, 634, 260, 58)
+            is_start_hov = bool(tip and start_rect.collidepoint(tip))
+            start_img = _start_h if is_start_hov and _start_h else _start_n
+            if start_img:
+                shared.screen.blit(start_img, start_rect.topleft)
+            else:
+                c = (100, 180, 255) if is_start_hov else (60, 60, 60)
+                pygame.draw.rect(shared.screen, c, start_rect, border_radius=8)
+
+            if is_start_hov:
+                if selected != preview_song:
+                    selected     = preview_song
+                    select_start = time.time()
+                else:
+                    el = time.time() - select_start
+                    if el >= hold_sec:
+                        song_practice_flow(selected, SPEED_DELAYS[selected_speed])
+                        selected     = None
+                        select_start = None
+            else:
+                selected     = None
+                select_start = None
 
         if tip:
             if shared._tip_img:
@@ -580,22 +693,7 @@ def score_practice_select():
             else:
                 pygame.draw.circle(shared.screen, (255, 255, 0), tip, 12, 0)
 
-        if hovered:
-            if selected != hovered:
-                selected     = hovered
-                select_start = time.time()
-            else:
-                el       = time.time() - select_start
-
-                if el >= hold_sec:
-                    song_practice_flow(selected)
-                    selected     = None
-                    select_start = None
-        else:
-            selected     = None
-            select_start = None
-
-        r = ui.update_back_and_exit_timers(res, inhibit_back=bool(hovered))
+        r = ui.update_back_and_exit_timers(res, inhibit_back=bool(raw_hovered))
         if r == "BACK":
             return
         if r == "EXIT":
@@ -605,9 +703,8 @@ def score_practice_select():
 
 
 # ── 따라연주 플로우 ───────────────────────────────────────────────────
-def song_practice_flow(song_name):
+def song_practice_flow(song_name, play_delay=0.4):
     melody_12  = [_n7_to_12(n) for n in audio.SONGS[song_name]]
-    play_delay = select_play_speed()
     res        = None
 
     for n12 in melody_12:
@@ -656,11 +753,11 @@ def song_practice_flow(song_name):
         "index": "2", "thumb": "1",
     }
     FINGER_PRESSED_COL = {
-        "pinky":  (255, 100, 100),
-        "ring":   (255, 180,  60),
-        "middle": ( 80, 220, 100),
-        "index":  ( 60, 200, 255),
-        "thumb":  (200, 100, 255),
+        "pinky":  (135, 206, 250),
+        "ring":   (135, 206, 250),
+        "middle": (135, 206, 250),
+        "index":  (135, 206, 250),
+        "thumb":  (135, 206, 250),
     }
 
     while True:
@@ -735,8 +832,8 @@ def song_practice_flow(song_name):
                     num_str = FINGER_NUM_LABEL[fname]
                     col     = FINGER_PRESSED_COL[fname] \
                         if vel >= gesture.PRESS_VEL_TH else (255, 255, 255)
-                    lbl    = shared.font_small.render(num_str, True, col)
-                    shadow = shared.font_small.render(num_str, True, (0, 0, 0))
+                    lbl    = shared.font_small_bold.render(num_str, True, col)
+                    shadow = shared.font_small_bold.render(num_str, True, (0, 0, 0))
                     cx = tx - lbl.get_width()  // 2
                     cy = ty - lbl.get_height() // 2
                     shared.screen.blit(shadow, (cx + 2, cy + 2))
@@ -841,22 +938,66 @@ def challenge_practice_select():
     except Exception:
         song_bg = None
 
+    SONG_KEYS = {
+        "반짝반짝": "twinkle", "생축": "birthday", "징글벨": "jingle",
+        "리틀람": "littlelamb", "환희": "ode", "런던": "london",
+        "나비야나비야": "butterfly", "세인츠": "saints", "로우로우로우": "rowrow", "양키": "yankee",
+    }
+    try:
+        _start_n = pygame.image.load("assets/ui/song_start_normal.png").convert_alpha()
+        _start_n = pygame.transform.smoothscale(_start_n, (260, 58))
+    except Exception:
+        _start_n = None
+    try:
+        _start_h = pygame.image.load("assets/ui/song_start_hover.png").convert_alpha()
+        _start_h = pygame.transform.smoothscale(_start_h, (260, 58))
+    except Exception:
+        _start_h = None
+    _speed_imgs = {}
+    for _sk in ["slow", "mid", "fast"]:
+        try:
+            _sn = pygame.image.load(f"assets/ui/speed_{_sk}_normal.png").convert_alpha()
+            _sn = pygame.transform.smoothscale(_sn, (72, 33))
+        except Exception:
+            _sn = None
+        try:
+            _sh = pygame.image.load(f"assets/ui/speed_{_sk}_hover.png").convert_alpha()
+            _sh = pygame.transform.smoothscale(_sh, (72, 33))
+        except Exception:
+            _sh = None
+        _speed_imgs[_sk] = {"normal": _sn, "hover": _sh}
+    try:
+        _speed_bg = pygame.image.load("assets/ui/speed_select_bg.png").convert_alpha()
+    except Exception:
+        _speed_bg = None
     song_imgs = {}
     for _name in song_names:
+        _key = SONG_KEYS.get(_name, _name)
         try:
-            _n = pygame.image.load(
-                f"assets/ui/song_{_name}_normal.png"
-            ).convert_alpha()
-            _a = pygame.image.load(
-                f"assets/ui/song_{_name}_active.png"
-            ).convert_alpha()
-            song_imgs[_name] = {"normal": _n, "active": _a}
+            _n = pygame.image.load(f"assets/ui/song_{_key}_normal.png").convert_alpha()
         except Exception:
-            song_imgs[_name] = {"normal": None, "active": None}
+            _n = None
+        try:
+            _h = pygame.image.load(f"assets/ui/song_{_key}_hover.png").convert_alpha()
+        except Exception:
+            _h = None
+        try:
+            _p = pygame.image.load(f"assets/ui/song_{_key}_preview.png").convert_alpha()
+            _p = pygame.transform.smoothscale(_p, (260, 376))
+        except Exception:
+            _p = None
+        song_imgs[_name] = {"normal": _n, "hover": _h, "preview": _p}
 
-    selected     = None
-    select_start = None
-    hold_sec     = 1
+    selected        = None
+    select_start    = None
+    hold_sec        = 1
+    btn_hover       = None
+    btn_hover_start = None
+    preview_song    = None
+    selected_speed  = "mid"
+    BTN_HOLD_SEC    = 1
+    SPEED_DELAYS    = {"slow": 0.7, "mid": 0.4, "fast": 0.25}
+    SPEED_POSITIONS = [("slow", 921, 576), ("mid", 1000, 576), ("fast", 1078, 576)] 
 
     while True:
         ui.handle_common_events()
@@ -871,35 +1012,108 @@ def challenge_practice_select():
 
         tip = gesture.get_index_tip_xy(res)
 
-        btn_w   = int(shared.WIN_W * 0.25)
-        btn_h   = int(shared.WIN_H * 0.13)
-        gap     = int(shared.WIN_H * 0.02)
-        start_y = int(shared.WIN_H * 0.23)
+        PANEL_X, PANEL_Y = 130, 140
+        PANEL_W, PANEL_H = 734, 545
+        BTN_W,   BTN_H   = 352, 97
+        gap              = 10
 
-        hovered = None
-        col_x   = [int(shared.WIN_W * 0.15), int(shared.WIN_W * 0.55)]
+        raw_hovered = None
         for i, name in enumerate(song_names):
             col = i // 5
             row = i % 5
-            x   = col_x[col]
-            y   = start_y + row * (btn_h + gap)
-            r   = pygame.Rect(x, y, btn_w, btn_h)
-            img_set = song_imgs.get(name)
-            if img_set and img_set.get("normal") and img_set.get("active"):
-                state    = "active" if (tip and r.collidepoint(tip)) else "normal"
+            x   = PANEL_X + col * (BTN_W + gap)
+            y   = PANEL_Y + gap + row * (BTN_H + gap)
+            r   = pygame.Rect(x, y, BTN_W, BTN_H)
+            img_set    = song_imgs.get(name)
+            is_hov     = bool(tip and r.collidepoint(tip))
+            is_preview = (name == preview_song)
+            if img_set and img_set.get("normal"):
+                state    = "hover" if is_preview and img_set.get("hover") else "normal"
                 base_img = img_set[state]
-                scaled   = pygame.transform.smoothscale(base_img, (r.width, r.height))
+                scaled   = pygame.transform.smoothscale(base_img, (BTN_W, BTN_H))
                 shared.screen.blit(scaled, r.topleft)
             else:
-                c = (100, 180, 255) if (tip and r.collidepoint(tip)) else (60, 60, 60)
+                c = (100, 180, 255) if is_preview else (60, 60, 60)
                 pygame.draw.rect(shared.screen, c, r, border_radius=8)
                 lbl = shared.font_micro.render(name, True, (255, 255, 255))
                 shared.screen.blit(
                     lbl, (r.centerx - lbl.get_width()  // 2,
                           r.centery - lbl.get_height() // 2)
                 )
-            if tip and r.collidepoint(tip):
-                hovered = name
+            if is_hov:
+                raw_hovered = name
+
+        # 1초 hover → preview 활성화 (손가락이 버튼 밖에 있으면 타이머 초기화)
+        if raw_hovered:
+            if raw_hovered != btn_hover:
+                btn_hover       = raw_hovered
+                btn_hover_start = time.time()
+        else:
+            btn_hover       = None
+            btn_hover_start = None
+        if btn_hover and btn_hover_start and (time.time() - btn_hover_start >= BTN_HOLD_SEC):
+            if preview_song != btn_hover:
+                preview_song = btn_hover
+                selected     = None
+                select_start = None
+
+        if preview_song:
+            _prev = song_imgs.get(preview_song, {}).get("preview")
+            if _prev:
+                shared.screen.blit(_prev, (906, 147))
+
+            # 최고 등급 표시
+            if shared.current_user:
+                _rec = auth.get_records(shared.current_user).get(preview_song)
+                if _rec:
+                    _grade_str = f"최고 등급: {_rec['grade']}  ({_rec['score']}%)"
+                    _GRADE_COLORS = {
+                        "PERFECT": (255, 215, 0), "GREAT": (100, 220, 100),
+                        "GOOD": (100, 180, 255), "BAD": (255, 140, 0), "TRY AGAIN": (255, 80, 80),
+                    }
+                    _gcol = _GRADE_COLORS.get(_rec["grade"], (255, 255, 255))
+                    _gs = shared.font_micro_bold.render(_grade_str, True, _gcol)
+                    shared.screen.blit(_gs, (906 + 130 - _gs.get_width() // 2, 200)) # 최고등급 x y 위치
+
+            # 속도 선택 배경 + 버튼
+            if _speed_bg:
+                _speed_bg_scaled = pygame.transform.smoothscale(_speed_bg, (260, 86))
+                shared.screen.blit(_speed_bg_scaled, (906, 537)) #_speed_bg_scaled x y 위치 설정, y 537이 맞음
+            for _sk, _sx, _sy in SPEED_POSITIONS:
+                _sr = pygame.Rect(_sx, _sy, 72, 33)
+                _is_shov = bool(tip and _sr.collidepoint(tip))
+                _is_ssel = (selected_speed == _sk)
+                _simg = _speed_imgs[_sk].get("hover" if (_is_shov or _is_ssel) else "normal")
+                if _simg:
+                    shared.screen.blit(_simg, _sr.topleft)
+                else:
+                    _sc = (100, 180, 255) if (_is_shov or _is_ssel) else (60, 60, 60)
+                    pygame.draw.rect(shared.screen, _sc, _sr, border_radius=4)
+                if _is_shov:
+                    selected_speed = _sk
+
+            start_rect = pygame.Rect(906, 634, 260, 58)
+            is_start_hov = bool(tip and start_rect.collidepoint(tip))
+            start_img = _start_h if is_start_hov and _start_h else _start_n
+            if start_img:
+                shared.screen.blit(start_img, start_rect.topleft)
+            else:
+                c = (100, 180, 255) if is_start_hov else (60, 60, 60)
+                pygame.draw.rect(shared.screen, c, start_rect, border_radius=8)
+
+            if is_start_hov:
+                if selected != preview_song:
+                    selected     = preview_song
+                    select_start = time.time()
+                else:
+                    el = time.time() - select_start
+                    if el >= hold_sec:
+                        challenge_practice_flow(selected, SPEED_DELAYS[selected_speed])
+                        selected     = None
+                        select_start = None
+            else:
+                selected     = None
+                select_start = None
 
         if tip:
             if shared._tip_img:
@@ -907,22 +1121,7 @@ def challenge_practice_select():
             else:
                 pygame.draw.circle(shared.screen, (255, 255, 0), tip, 12, 0)
 
-        if hovered:
-            if selected != hovered:
-                selected     = hovered
-                select_start = time.time()
-            else:
-                el       = time.time() - select_start
-
-                if el >= hold_sec:
-                    challenge_practice_flow(selected)
-                    selected     = None
-                    select_start = None
-        else:
-            selected     = None
-            select_start = None
-
-        r = ui.update_back_and_exit_timers(res, inhibit_back=bool(hovered))
+        r = ui.update_back_and_exit_timers(res, inhibit_back=bool(raw_hovered))
         if r == "BACK":
             return
         if r == "EXIT":
@@ -932,9 +1131,8 @@ def challenge_practice_select():
 
 
 # ── 도전연주 플로우 ───────────────────────────────────────────────────
-def challenge_practice_flow(song_name):
+def challenge_practice_flow(song_name, play_delay=0.4):
     melody_12  = [_n7_to_12(n) for n in audio.SONGS[song_name]]
-    play_delay = select_play_speed()
 
     for n12 in melody_12:
         ui.handle_common_events()
@@ -994,11 +1192,11 @@ def challenge_practice_flow(song_name):
         "index": "2", "thumb": "1",
     }
     FINGER_PRESSED_COL = {
-        "pinky":  (255, 100, 100),
-        "ring":   (255, 180,  60),
-        "middle": ( 80, 220, 100),
-        "index":  ( 60, 200, 255),
-        "thumb":  (200, 100, 255),
+        "pinky":  (135, 206, 250),
+        "ring":   (135, 206, 250),
+        "middle": (135, 206, 250),
+        "index":  (135, 206, 250),
+        "thumb":  (135, 206, 250),
     }
 
     while True:
@@ -1058,6 +1256,9 @@ def challenge_practice_flow(song_name):
             else:
                 grade     = "TRY AGAIN"
                 grade_col = (255, 80, 80)
+
+            if shared.current_user:
+                auth.save_record(shared.current_user, song_name, grade, final_score)
 
             result_start = time.time()
             while time.time() - result_start < 5:
@@ -1215,8 +1416,8 @@ def challenge_practice_flow(song_name):
                     num_str = FINGER_NUM_LABEL[fname]
                     col     = FINGER_PRESSED_COL[fname] \
                         if vel >= gesture.PRESS_VEL_TH else (255, 255, 255)
-                    lbl    = shared.font_small.render(num_str, True, col)
-                    shadow = shared.font_small.render(num_str, True, (0, 0, 0))
+                    lbl    = shared.font_small_bold.render(num_str, True, col)
+                    shadow = shared.font_small_bold.render(num_str, True, (0, 0, 0))
                     cx = tx - lbl.get_width()  // 2
                     cy = ty - lbl.get_height() // 2
                     shared.screen.blit(shadow, (cx + 2, cy + 2))
@@ -1227,6 +1428,130 @@ def challenge_practice_flow(song_name):
             return
         if r == "EXIT":
             pygame.quit(); sys.exit()
+
+        pygame.display.flip()
+
+
+# ── 로그인 화면 ──────────────────────────────────────────────────────
+def login_screen():
+    """손 제스처로 칸 선택 + 키보드 입력 → 로그인 또는 회원가입 후 shared.current_user 설정"""
+    fields   = ["아이디", "비밀번호"]
+    values   = ["", ""]
+    focus    = 0
+    message  = ""
+    msg_col  = (255, 255, 255)
+
+    # 가로 정렬: 라벨(왼) + 입력칸(오)
+    LABEL_W  = 120
+    BOX_W    = 340
+    BOX_H    = 44
+    GAP      = 16
+    ROW_GAP  = 22
+    ROW_Y0   = shared.WIN_H // 2 - 30
+    ROW_YS   = [ROW_Y0 + i * (BOX_H + ROW_GAP) for i in range(len(fields))]
+    BOX_X    = 480
+    LBL_X    = BOX_X - GAP - LABEL_W
+
+    _font = shared._font_bold(28)
+
+    try:
+        bg = pygame.image.load("assets/ui/mode_select_bg.png").convert_alpha()
+        bg = pygame.transform.smoothscale(bg, (shared.WIN_W, shared.WIN_H))
+    except Exception:
+        bg = None
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_BACKSPACE:
+                    values[focus] = values[focus][:-1]
+                elif event.key == pygame.K_RETURN:
+                    username = values[0].strip()
+                    password = values[1].strip()
+                    if not username or not password:
+                        message = "아이디와 비밀번호를 입력해주세요."
+                        msg_col = (255, 100, 100)
+                    elif auth.login(username, password):
+                        shared.current_user = username
+                        return
+                    elif auth.register(username, password):
+                        shared.current_user = username
+                        message = f"'{username}' 계정이 생성되었습니다!"
+                        msg_col = (100, 220, 100)
+                        return
+                    else:
+                        message = "비밀번호가 틀렸습니다."
+                        msg_col = (255, 100, 100)
+                else:
+                    if len(values[focus]) < 20:
+                        values[focus] += event.unicode
+
+        rgb, _ = gesture.cam_frame_rgb()
+        if rgb is not None:
+            ui.blit_camera_bg(rgb)
+            res = shared.hands.process(rgb)
+        else:
+            shared.screen.fill((20, 20, 20))
+            res = None
+
+        if bg:
+            shared.screen.blit(bg, (0, 0))
+
+        # 손가락으로 입력칸 선택
+        tip = gesture.get_index_tip_xy(res)
+        for i, ry in enumerate(ROW_YS):
+            box_rect = pygame.Rect(BOX_X, ry, BOX_W, BOX_H)
+            if tip and box_rect.collidepoint(tip):
+                focus = i
+
+        _C = (30, 41, 57)  # #1E2939
+
+        # 제목
+        title_surf = _font.render("LOGIN", True, _C)
+        shared.screen.blit(title_surf,
+            (shared.WIN_W // 2 - title_surf.get_width() // 2, ROW_Y0 - 80))
+
+        # 가로 정렬 입력 필드
+        for i, (label, ry) in enumerate(zip(fields, ROW_YS)):
+            # 라벨 (오른쪽 정렬로 박스에 붙임)
+            lbl_surf = _font.render(label, True, _C)
+            lbl_x = LBL_X + LABEL_W - lbl_surf.get_width()
+            lbl_y = ry + (BOX_H - lbl_surf.get_height()) // 2
+            shared.screen.blit(lbl_surf, (lbl_x, lbl_y))
+
+            # 입력 박스 (흰색 배경)
+            box_rect   = pygame.Rect(BOX_X, ry, BOX_W, BOX_H)
+            border_col = (60, 160, 255) if focus == i else (180, 180, 180)
+            pygame.draw.rect(shared.screen, (255, 255, 255), box_rect, border_radius=7)
+            pygame.draw.rect(shared.screen, border_col, box_rect, 3, border_radius=7)
+
+            display_val = "*" * len(values[i]) if i == 1 else values[i]
+            val_surf = _font.render(display_val, True, _C)
+            shared.screen.blit(val_surf, (box_rect.x + 12, box_rect.y + (BOX_H - val_surf.get_height()) // 2))
+
+        # 안내문
+        hint_surf = _font.render(
+            "손가락으로 칸 선택  |  키보드 입력  |  Enter: 로그인 / 신규 자동 가입",
+            True, _C)
+        shared.screen.blit(hint_surf,
+            (shared.WIN_W // 2 - hint_surf.get_width() // 2,
+             ROW_YS[-1] + BOX_H + 30))
+
+        # 메시지
+        if message:
+            msg_surf = _font.render(message, True, msg_col)
+            shared.screen.blit(msg_surf,
+                (shared.WIN_W // 2 - msg_surf.get_width() // 2,
+                 ROW_YS[-1] + BOX_H + 68))
+
+        # 손가락 커서
+        if tip:
+            if shared._tip_img:
+                shared.screen.blit(shared._tip_img, (tip[0] - 40, tip[1] - 40))
+            else:
+                pygame.draw.circle(shared.screen, (255, 255, 0), tip, 12, 0)
 
         pygame.display.flip()
 

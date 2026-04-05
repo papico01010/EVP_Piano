@@ -20,7 +20,7 @@ import shared
 # ── 3. 화면 생성 ──────────────────────────────────────────────────────
 _flags  = pygame.FULLSCREEN if shared.CONFIG["fullscreen_default"] else 0
 _screen = pygame.display.set_mode(shared.CONFIG["win_size"], _flags)
-pygame.display.set_caption("EVP - 감정 피아노")
+pygame.display.set_caption("VIRTUAL PIANO LEARNING INTERFACE")
 _clock  = pygame.time.Clock()
 
 # ── 4. MediaPipe Hands 초기화 ─────────────────────────────────────────
@@ -84,6 +84,7 @@ CUR      = {"piano": PROFILES["easy"]}
 
 # ── 메인 함수 ─────────────────────────────────────────────────────────
 def main():
+    game_modes.login_screen()
     while True:
         CUR["piano"] = PROFILES["easy"]
         ret = game_modes.mode_select_and_run()
