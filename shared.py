@@ -19,7 +19,7 @@ CONFIG = {
     "camera_index":  0,
     "camera_size":   (1280, 720),
     "camera_fps":    30,
-    "back_hold":     3.0,
+    "back_hold":     1.0,
     "exit_hold":     3.0,
 }
 

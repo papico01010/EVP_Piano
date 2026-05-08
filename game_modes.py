@@ -1,11 +1,11 @@
 """
 game_modes.py - 게임 플로우 모듈
 """
-import pyttsx3
 import sys
 import math
 import time
 import threading
+import queue
 import pygame
 
 import shared
@@ -14,6 +14,76 @@ import gesture
 import ui
 import auth
 
+# ── TTS 글로벌 워커 ─────────────────────────────────────────────────────
+_tts_queue: queue.Queue = queue.Queue()
+_tts_engine_ref = [None]
+_tts_interrupted = [False]
+
+
+def _make_tts_engine():
+    import pyttsx3
+    # 캐시된 손상 엔진을 피하기 위해 전역 캐시를 비우고 새로 초기화
+    pyttsx3._activeEngines.clear()
+    engine = pyttsx3.init()
+    engine.setProperty("rate", 160)
+    engine.setProperty("volume", 1.0)
+    return engine
+
+
+def _tts_worker():
+    try:
+        engine = _make_tts_engine()
+        _tts_engine_ref[0] = engine
+        while True:
+            msg = _tts_queue.get()
+            if msg is None:
+                break
+            # 큐에 더 최신 메시지가 있으면 건너뜀
+            while not _tts_queue.empty():
+                try:
+                    msg = _tts_queue.get_nowait()
+                except queue.Empty:
+                    break
+            _tts_interrupted[0] = False
+            try:
+                engine.say(msg)
+                engine.runAndWait()
+            except Exception:
+                pass
+            # 중단됐으면 엔진 재초기화 (endLoop 후 엔진 상태 복구)
+            if _tts_interrupted[0]:
+                try:
+                    del engine
+                except Exception:
+                    pass
+                engine = _make_tts_engine()
+                _tts_engine_ref[0] = engine
+    except Exception:
+        pass
+
+
+threading.Thread(target=_tts_worker, daemon=True).start()
+
+
+def stop_tts():
+    """큐를 비우고 현재 발화를 중단한다."""
+    while not _tts_queue.empty():
+        try:
+            _tts_queue.get_nowait()
+        except queue.Empty:
+            break
+    engine = _tts_engine_ref[0]
+    if engine:
+        _tts_interrupted[0] = True
+        try:
+            engine.endLoop()
+        except Exception:
+            pass
+
+
+def speak(msg: str):
+    """TTS 메시지를 큐에 넣어 재생"""
+    _tts_queue.put(msg)
 
 # ── 음악 유틸 ─────────────────────────────────────────────────────────
 def _n7_to_12(n):
@@ -32,11 +102,123 @@ def note_to_kor(note: str) -> str:
 _title_imgs: dict  = {}
 _note_imgs: dict   = {}
 _score_imgs: dict  = {}
+_sheet_imgs: dict  = {}   # {song_name: {1: Surface, 2: Surface, ...}}
+_play_bg_imgs: dict = {}  # {"follow_반짝반짝": Surface, "challenge_반짝반짝": Surface, ...}
+_program_tip_img   = None  # program_tip.png (악보 위 네온 포인터)
+
+# ── 악보 팁 좌표 (음표 인덱스별, 추후 악보마다 채워 넣을 예정) ────────────
+# SONG_TIP_X: {song_name: [note_idx별 x좌표, ...]}
+# SONG_TIP_Y: {song_name: y좌표}  (없으면 기본값 530)
+_TIP_Y_DEFAULT = 530
+
+SONG_TIP_Y: dict = {
+    "반짝반짝":   530,
+    "런던":       530,
+    "생축":       530,
+    "징글벨":     530,
+    "나비야나비야": 530,
+}
+
+SONG_TIP_X: dict = {
+    "반짝반짝": [
+        113, 245, 390, 525, 668, 800, 945,  # 1문단
+         90, 225, 372, 510, 655, 795, 940,  # 2문단
+         90, 225, 375, 510, 655, 795, 940,  # 3문단
+         90, 225, 375, 510, 655, 795, 940,  # 4문단
+         90, 225, 375, 510, 655, 795, 940,  # 5문단
+         90, 225, 375, 510, 655, 795, 935,  # 6문단
+    ],
+    "런던": [
+        113, 210, 245, 310, 390, 455, 525, 670, 738, 800, 950, 1015, 1080,  # 1문단
+         90, 190, 220, 290, 365, 435, 500, 650, 790, 940, 1000,              # 2문단
+    ],
+    "생축": [
+        290, 350, 390, 480, 563, 630, 670, 850, 920, 950, 1040, 1120, 1190,  # 1문단
+         90, 270, 335, 370, 460, 550, 650, 745, 1120, 1190,                  # 2문단
+         90, 195, 300, 420,                                                   # 3문단
+    ],
+    "징글벨": [
+        113, 180, 245, 390, 455, 520, 670, 740, 800, 870, 950,                          # 1문단
+         90, 150, 220, 290, 370, 440, 510, 580, 660, 730, 790, 860, 940, 1080,          # 2문단
+         90, 150, 220, 370, 440, 510, 660, 720, 790, 860, 945,                          # 3문단
+         90, 150, 220, 290, 370, 440, 510, 580, 650, 720, 790, 860, 940,                # 4문단
+    ],
+    "나비야나비야": [
+        113, 180, 245, 390, 460, 520, 670, 735, 800, 870, 950, 1020, 1080,  # 1문단
+         90, 150, 220, 370, 435, 510, 660, 725, 795, 865, 945, 1015, 1080,  # 2문단
+         90, 155, 220, 290, 370, 435, 510, 660, 725, 795, 860, 945, 1010, 1080,  # 3문단
+         90, 150, 220, 370, 435, 510, 660, 725, 795, 865, 945, 1015, 1080,  # 4문단
+    ],
+    "세인츠": [
+        180, 245, 310, 395, 737, 805, 870, 950,  # 1문단
+        155, 220, 290, 372, 510, 660, 795, 945,  # 2문단
+        225, 295, 372, 578, 660, 795, 945, 1016, # 3문단
+        223, 292, 370, 506, 653, 785, 935,        # 4문단
+    ],
+    "비행기": [
+        110, 217, 245, 315, 390, 457, 522, 670, 735, 805, 952, 1016, 1082,  # 1문단
+         90, 192, 218, 285, 370, 435, 505, 650, 720, 790, 855, 935,          # 2문단
+    ],
+    "로우로우로우": [
+        110, 245, 392, 480, 525, 670, 763, 800, 895, 950,                              # 1문단
+         90, 133, 176, 220, 264, 315, 372, 411, 457, 502, 550, 596, 650, 743, 788, 882, 936,  # 2문단
+    ],
+    "환희": [
+        110, 175, 245, 315, 392, 457, 522, 590, 670, 734, 806, 872, 952, 1016, 1082,                    # 1문단
+         90, 155, 220, 285, 372, 435, 510, 580, 659, 723, 795, 863, 945, 1012, 1080,                    # 2문단
+         90, 153, 220, 293, 372, 435, 471, 510, 580, 660, 723, 761, 792, 863, 945, 1016, 1080,          # 3문단
+         90, 155, 220, 285, 372, 435, 510, 580, 659, 723, 795, 863, 945, 1012, 1080,                    # 4문단
+    ],
+    "양키": [
+        131, 193, 264, 325, 407, 471, 536, 600, 680, 743, 808, 874, 952, 1087,  # 1문단
+        105, 165, 240, 305, 385, 445, 515, 581, 663, 725, 790, 861, 937, 1069,  # 2문단
+    ],
+}
+
+# 노래 영문 키 매핑 (파일명용)
+_SONG_KEY_MAP = {
+    "반짝반짝": "twinkle", "생축": "birthday", "징글벨": "jingle",
+    "비행기": "airplane", "환희": "ode", "런던": "london",
+    "나비야나비야": "butterfly", "세인츠": "saints", "로우로우로우": "rowrow", "양키": "yankee",
+}
+
+# 악보 섹션 정보: {song_name: 섹션당_음표수}  (섹션 수 = 전체음표 / 섹션당음표수)
+SONG_SHEET_SECTIONS = {
+    "반짝반짝": [7, 14, 21, 28, 35],  # 1~6문단 각 7음
+    "징글벨": [11, 25, 36, 50],  # 4문단 경계 (누적 음표 수)
+    "로우로우로우": [10],   # 1문단 10음, 2문단 17음
+    "양키": [14],           # 1문단 14음, 2문단 14음
+    "생축": [13, 23],      # 1문단 13음, 2문단 10음, 3문단 4음
+    "나비야나비야": [13, 26, 40], # 1~2문단 각 13음, 3문단 14음, 4문단 13음
+    "세인츠": [8, 16, 24], # 1~3문단 각 8음, 4문단 7음
+    "비행기": [13],        # 1문단 13음, 2문단 12음
+    "런던": [13],          # 1문단 13음, 2문단 11음
+    "환희": [15, 30, 47], # 1~2문단 각 15음, 3문단 17음, 4문단 15음
+}
+
+
+def _get_sheet_section(song_name: str, idx: int):
+    """현재 음표 인덱스(idx)가 속한 섹션 번호(1부터) 반환."""
+    sec_info = SONG_SHEET_SECTIONS.get(song_name)
+    if sec_info is None:
+        return None
+    if isinstance(sec_info, list):
+        for i, boundary in enumerate(sec_info):
+            if idx < boundary:
+                return i + 1
+        return len(sec_info) + 1
+    return idx // sec_info + 1
 
 
 def _load_image_cache():
     """SONGS 키를 참고해 관련 이미지를 미리 로드한다."""
-    global _title_imgs, _note_imgs, _score_imgs
+    global _title_imgs, _note_imgs, _score_imgs, _sheet_imgs, _play_bg_imgs, _program_tip_img
+
+    # 악보 팁 이미지
+    try:
+        _program_tip_img = pygame.image.load("assets/ui/program_tip.png").convert_alpha()
+    except Exception:
+        _program_tip_img = None
 
     # 타이틀 이미지
     _title_imgs = {}
@@ -75,6 +257,53 @@ def _load_image_cache():
             _score_imgs[_song] = pygame.transform.smoothscale(_img, (new_w, new_h))
         except Exception:
             _score_imgs[_song] = None
+
+    # 악보 섹션 이미지 (assets/ui/<key>_<n>.png)
+    # twinkle 스타일(1280×720 풀캔버스)은 그대로 스케일,
+    # 스트립 스타일(1180×113 등)은 너비만 WIN_W로 유지하고 twinkle 기준 y 위치에 배치
+    _SHEET_Y_FRAC = 0.79   # twinkle 기준: 악보 상단이 WIN_H 의 약 79% 지점
+    _sheet_imgs = {}
+    for _song, _nps in SONG_SHEET_SECTIONS.items():
+        _key = _SONG_KEY_MAP.get(_song, _song)
+        _total = len(audio.SONGS.get(_song, []))
+        _n_sections = len(_nps) + 1 if isinstance(_nps, list) else (_total // _nps)
+        _sheet_imgs[_song] = {}
+        for _i in range(1, _n_sections + 1):
+            try:
+                _img = pygame.image.load(
+                    f"assets/ui/{_key}_{_i}.png"
+                ).convert_alpha()
+                _orig_w, _orig_h = _img.get_size()
+                if _orig_h >= shared.WIN_H * 0.3:
+                    # 풀캔버스 스타일 (twinkle 등): 화면 크기로 그대로 스케일
+                    _sheet_imgs[_song][_i] = pygame.transform.smoothscale(
+                        _img, (shared.WIN_W, shared.WIN_H)
+                    )
+                else:
+                    # 스트립 스타일: twinkle(1280px 기준) 비율로 너비 스케일 후 중앙 배치
+                    _new_w = int(_orig_w * shared.WIN_W / 1280)
+                    _new_h = int(_orig_h * _new_w / _orig_w)
+                    _strip = pygame.transform.smoothscale(_img, (_new_w, _new_h))
+                    _canvas = pygame.Surface((shared.WIN_W, shared.WIN_H), pygame.SRCALPHA)
+                    _canvas.fill((0, 0, 0, 0))
+                    _x = (shared.WIN_W - _new_w) // 2
+                    _y = int(shared.WIN_H * _SHEET_Y_FRAC)
+                    _canvas.blit(_strip, (_x, _y))
+                    _sheet_imgs[_song][_i] = _canvas
+            except Exception:
+                _sheet_imgs[_song][_i] = None
+
+    # 연주 화면 곡 이미지 (assets/ui/play_{key}.png, 611×48)
+    _play_bg_imgs = {}
+    for _song in audio.SONGS.keys():
+        _key = _SONG_KEY_MAP.get(_song, _song)
+        try:
+            _img = pygame.image.load(
+                f"assets/ui/play_{_key}.png"
+            ).convert_alpha()
+            _play_bg_imgs[_song] = pygame.transform.smoothscale(_img, (611, 48))
+        except Exception:
+            _play_bg_imgs[_song] = None
 
 
 # ── 음성인식 헬퍼 ─────────────────────────────────────────────────────
@@ -268,20 +497,8 @@ def confirm_mode(chosen):
         img_key = "confirm_challenge"
         tts_msg = "도전연주에서는 원하는 악보를 선택한 후 가이드 건반 없이 악보를 보며 연주해야 해요. 올바른 연주를 통해 높은 등급에 도전해보세요. 도전연주를 플레이 하실 건가요?"
 
-    import pyttsx3
-    import threading
-
-    def _speak():
-        try:
-            engine = pyttsx3.init()
-            engine.setProperty("rate", 160)
-            engine.setProperty("volume", 1.0)
-            engine.say(tts_msg)
-            engine.runAndWait()
-        except Exception:
-            pass
-
-    threading.Thread(target=_speak, daemon=True).start()
+    stop_tts()
+    speak(tts_msg)
 
     try:
         img = pygame.image.load(f"assets/ui/{img_key}.png").convert_alpha()
@@ -291,6 +508,8 @@ def confirm_mode(chosen):
         img = None
 
     ans = yes_no_screen("", hold_sec=1, bg_img=img)
+    if ans is not True:
+        stop_tts()
     return ans is True
 
 
@@ -521,7 +740,7 @@ def score_practice_select():
 
     SONG_KEYS = {
         "반짝반짝": "twinkle", "생축": "birthday", "징글벨": "jingle",
-        "리틀람": "littlelamb", "환희": "ode", "런던": "london",
+        "비행기": "airplane", "환희": "ode", "런던": "london",
         "나비야나비야": "butterfly", "세인츠": "saints", "로우로우로우": "rowrow", "양키": "yankee",
     }
     try:
@@ -704,39 +923,50 @@ def score_practice_select():
 
 # ── 따라연주 플로우 ───────────────────────────────────────────────────
 def song_practice_flow(song_name, play_delay=0.4):
-    melody_12  = [_n7_to_12(n) for n in audio.SONGS[song_name]]
-    res        = None
+    melody      = audio.SONGS[song_name]
+    _dur_list   = audio.SONG_DURATIONS.get(song_name, [])
+    _pre_delays = audio.SONG_PRE_DELAYS.get(song_name, [])
+    _speed_mult = play_delay / 0.4  # 0.4=보통 기준, slow→1.75x, fast→0.625x
+    res         = None
 
-    for n12 in melody_12:
+    for _preview_idx, n in enumerate(melody):
         ui.handle_common_events()
         rgb, _ = gesture.cam_frame_rgb()
         if rgb is not None:
             res = shared.hands.process(rgb)
             ui.blit_camera_bg(rgb)
-            prog_note_overlay = f"{n12}4"
-
-            _t_img = _title_imgs.get(f"follow_{song_name}")
-            if _t_img:
-                shared.screen.blit(_t_img, (shared.WIN_W // 2 - 250, 18))
-            else:
-                ui.draw_title_banner(f"따라 연주: {song_name}", top_pad=18)
+            prog_note_overlay = n
 
             ui.draw_and_debug(
                 user_note=None,
                 program_note=prog_note_overlay,
-                note_label_text=note_to_kor(f"{n12}4"),
+                note_label_text=None,
             )
-            ui.draw_lines_center(
-                [f"현재 음: {note_to_kor(n12+'4')}"], 116, size="small", line_gap=8
-            )
+            _pb_img = _play_bg_imgs.get(song_name)
+            if _pb_img:
+                shared.screen.blit(_pb_img, (335, 69))
+            _sec = _get_sheet_section(song_name, _preview_idx)
+            if _sec:
+                _sh_img = _sheet_imgs.get(song_name, {}).get(_sec)
+                if _sh_img:
+                    shared.screen.blit(_sh_img, (0, 0))
+            _tip_xs = SONG_TIP_X.get(song_name)
+            if _tip_xs and _preview_idx < len(_tip_xs) and _program_tip_img:
+                _tip_y = SONG_TIP_Y.get(song_name, _TIP_Y_DEFAULT)
+                shared.screen.blit(_program_tip_img, (_tip_xs[_preview_idx], _tip_y))
             r = ui.update_back_and_exit_timers(res, inhibit_back=False)
             if r == "BACK":
                 return "back_to_practice_menu"
             if r == "EXIT":
                 pygame.quit(); sys.exit()
             pygame.display.flip()
-        audio.get_sound(n12, 4).play().fadeout(350)
-        time.sleep(play_delay)
+        _pre = (_pre_delays[_preview_idx] if _preview_idx < len(_pre_delays) else 0) * _speed_mult
+        if _pre > 0:
+            time.sleep(_pre)
+        _dur = audio.NOTE_DUR.get(
+            _dur_list[_preview_idx] if _preview_idx < len(_dur_list) else "Q", 0.5) * _speed_mult
+        audio.get_sound(n[:-1], int(n[-1])).play().fadeout(int(_dur * 700))
+        time.sleep(_dur)
 
     tip = gesture.get_index_tip_xy(res) if res else None
     if tip:
@@ -771,28 +1001,26 @@ def song_practice_flow(song_name, play_delay=0.4):
         gesture.is_index_press(res)
 
         prev_state  = nh.state
-        target12    = melody_12[idx]
-        target_note = f"{target12}4"
+        target_note = melody[idx]
+        target12    = target_note[:-1]
+        target_oct  = int(target_note[-1])
         if target_note in pressed_notes:
-            nh.update(True, target12, 4)
+            nh.update(True, target12, target_oct)
             note_label = note_to_kor(target_note)
         else:
             nh.update(False, None, None)
 
         ui.blit_camera_bg(rgb)
 
-        _t_img = _title_imgs.get(f"follow_{song_name}")
-        if _t_img:
-            shared.screen.blit(_t_img, (shared.WIN_W // 2 - 250, 18))
-        else:
-            ui.draw_title_banner(f"따라 연주: {song_name}", top_pad=18)
-
-        prog_overlay = f"{melody_12[idx]}4" if idx < len(melody_12) else None
+        prog_overlay = melody[idx] if idx < len(melody) else None
         ui.draw_and_debug(
             user_notes=pressed_notes,
             program_note=prog_overlay,
             note_label_text=None,
         )
+        _pb_img = _play_bg_imgs.get(song_name)
+        if _pb_img:
+            shared.screen.blit(_pb_img, (335, 69))
         _sc = _score_imgs.get(song_name)
         if _sc:
             shared.screen.blit(
@@ -800,17 +1028,15 @@ def song_practice_flow(song_name, play_delay=0.4):
                       shared.WIN_H - int(229 * 0.8))
             )
 
-        if idx < len(melody_12):
-            _kor   = note_to_kor(melody_12[idx] + '4')
-            _n_img = _note_imgs.get(_kor)
-            if _n_img:
-                shared.screen.blit(_n_img, (shared.WIN_W // 2 - 100,
-                                            int(shared.WIN_H * 0.68)))
-            else:
-                ui.draw_lines_center(
-                    [f"쳐야 하는 음: {_kor}"],
-                    int(shared.WIN_H * 0.68), size="small", line_gap=8,
-                )
+        _sec = _get_sheet_section(song_name, idx)
+        if _sec:
+            _sh_img = _sheet_imgs.get(song_name, {}).get(_sec)
+            if _sh_img:
+                shared.screen.blit(_sh_img, (0, 0))
+        _tip_xs = SONG_TIP_X.get(song_name)
+        if _tip_xs and idx < len(_tip_xs) and _program_tip_img:
+            _tip_y = SONG_TIP_Y.get(song_name, _TIP_Y_DEFAULT)
+            shared.screen.blit(_program_tip_img, (_tip_xs[idx], _tip_y))
 
         if res and res.multi_hand_landmarks:
             for hand_idx, hand_lm in enumerate(res.multi_hand_landmarks):
@@ -847,8 +1073,17 @@ def song_practice_flow(song_name, play_delay=0.4):
 
         if prev_state == "idle" and nh.state == "pressed":
             idx += 1
-            if idx >= len(melody_12):
+            if idx >= len(melody):
                 nh.reset()
+                try:
+                    practice_result_bg = pygame.image.load(
+                        "assets/ui/practice_result_bg.png"
+                    ).convert_alpha()
+                    practice_result_bg = pygame.transform.smoothscale(
+                        practice_result_bg, (shared.WIN_W, shared.WIN_H)
+                    )
+                except Exception:
+                    practice_result_bg = None
                 try:
                     finish_title_img = pygame.image.load(
                         "assets/ui/finish_title.png"
@@ -880,25 +1115,8 @@ def song_practice_flow(song_name, play_delay=0.4):
                         continue
                     res = shared.hands.process(rgb)
                     ui.blit_camera_bg(rgb)
-                    if finish_title_img:
-                        shared.screen.blit(
-                            finish_title_img,
-                            (shared.WIN_W // 2 - int(shared.WIN_W * 0.30),
-                             int(shared.WIN_H * 0.03))
-                        )
-                    else:
-                        ui.draw_title_banner("잘 했어요!", top_pad=18)
-                    if finish_guide_img:
-                        shared.screen.blit(
-                            finish_guide_img,
-                            (shared.WIN_W // 2 - int(shared.WIN_W * 0.25),
-                             shared.WIN_H // 2 - int(shared.WIN_H * 0.1))
-                        )
-                    else:
-                        ui.draw_lines_center(
-                            ["'다시하기' 또는 '악보선택'이라고 말해요"],
-                            shared.WIN_H // 2 - 40, size="small", line_gap=10,
-                        )
+                    if practice_result_bg:
+                        shared.screen.blit(practice_result_bg, (0, 0))
                     tip = gesture.get_index_tip_xy(res)
                     if tip:
                         if shared._tip_img:
@@ -940,7 +1158,7 @@ def challenge_practice_select():
 
     SONG_KEYS = {
         "반짝반짝": "twinkle", "생축": "birthday", "징글벨": "jingle",
-        "리틀람": "littlelamb", "환희": "ode", "런던": "london",
+        "비행기": "airplane", "환희": "ode", "런던": "london",
         "나비야나비야": "butterfly", "세인츠": "saints", "로우로우로우": "rowrow", "양키": "yankee",
     }
     try:
@@ -1132,49 +1350,71 @@ def challenge_practice_select():
 
 # ── 도전연주 플로우 ───────────────────────────────────────────────────
 def challenge_practice_flow(song_name, play_delay=0.4):
-    melody_12  = [_n7_to_12(n) for n in audio.SONGS[song_name]]
+    melody      = audio.SONGS[song_name]
+    _dur_list   = audio.SONG_DURATIONS.get(song_name, [])
+    _pre_delays = audio.SONG_PRE_DELAYS.get(song_name, [])
+    _speed_mult = play_delay / 0.4  # 0.4=보통 기준, slow→1.75x, fast→0.625x
 
-    for n12 in melody_12:
+    for _preview_idx, n in enumerate(melody):
         ui.handle_common_events()
         rgb, _ = gesture.cam_frame_rgb()
         if rgb is not None:
             res = shared.hands.process(rgb)
             ui.blit_camera_bg(rgb)
-            _t_img = _title_imgs.get(f"challenge_{song_name}")
-            if _t_img:
-                shared.screen.blit(_t_img, (shared.WIN_W // 2 - 250, 18))
-            else:
-                ui.draw_title_banner(f"도전연주: {song_name}", top_pad=18)
             ui.draw_and_debug(
                 user_note=None,
-                program_note=f"{n12}4",
+                program_note=n,
                 note_label_text=None,
             )
-            ui.draw_lines_center(
-                ["잘 들어봐요! 외워서 쳐야 해요."], 116, size="small", line_gap=8
-            )
+            _pb_img = _play_bg_imgs.get(song_name)
+            if _pb_img:
+                shared.screen.blit(_pb_img, (335, 69))
+            _sec = _get_sheet_section(song_name, _preview_idx)
+            if _sec:
+                _sh_img = _sheet_imgs.get(song_name, {}).get(_sec)
+                if _sh_img:
+                    shared.screen.blit(_sh_img, (0, 0))
+            _tip_xs = SONG_TIP_X.get(song_name)
+            if _tip_xs and _preview_idx < len(_tip_xs) and _program_tip_img:
+                _tip_y = SONG_TIP_Y.get(song_name, _TIP_Y_DEFAULT)
+                shared.screen.blit(_program_tip_img, (_tip_xs[_preview_idx], _tip_y))
             r = ui.update_back_and_exit_timers(res, inhibit_back=False)
             if r == "BACK":
                 return
             if r == "EXIT":
                 pygame.quit(); sys.exit()
             pygame.display.flip()
-        audio.get_sound(n12, 4).play().fadeout(350)
-        time.sleep(play_delay)
+        _pre = (_pre_delays[_preview_idx] if _preview_idx < len(_pre_delays) else 0) * _speed_mult
+        if _pre > 0:
+            time.sleep(_pre)
+        _dur = audio.NOTE_DUR.get(
+            _dur_list[_preview_idx] if _preview_idx < len(_dur_list) else "Q", 0.5) * _speed_mult
+        audio.get_sound(n[:-1], int(n[-1])).play().fadeout(int(_dur * 700))
+        time.sleep(_dur)
 
     # 준비 카운트다운 3초
+    try:
+        _ready_bg = pygame.image.load("assets/ui/challenge_ready_bg.png").convert_alpha()
+        _ready_bg = pygame.transform.smoothscale(_ready_bg, (shared.WIN_W, shared.WIN_H))
+    except Exception:
+        _ready_bg = None
+
     countdown_start = time.time()
-    while time.time() - countdown_start < 3:
+    while True:
+        remain = 3 - (time.time() - countdown_start)
+        count_num = int(math.ceil(remain))
+        if count_num <= 0:
+            break
         ui.handle_common_events()
         rgb, _ = gesture.cam_frame_rgb()
         if rgb is None:
             continue
         res = shared.hands.process(rgb)
         ui.blit_camera_bg(rgb)
-        remain = 3 - (time.time() - countdown_start)
-        ui.draw_title_banner("준비하세요!", top_pad=18)
+        if _ready_bg:
+            shared.screen.blit(_ready_bg, (0, 0))
         ui.draw_lines_center(
-            [str(int(math.ceil(remain)))],
+            [str(count_num)],
             shared.WIN_H // 2 - 40, size="huge", line_gap=0,
         )
         pygame.display.flip()
@@ -1209,8 +1449,8 @@ def challenge_practice_flow(song_name, play_delay=0.4):
         pressed_notes = gesture.get_all_pressed_notes(res)
         gesture.is_index_press(res)
 
-        target12    = melody_12[idx]
-        target_note = f"{target12}4"
+        target_note = melody[idx]
+        target12    = target_note[:-1]
 
         currently_pressed = len(pressed_notes) > 0
         now = time.time()
@@ -1238,7 +1478,7 @@ def challenge_practice_flow(song_name, play_delay=0.4):
         last_pressed = currently_pressed if now >= wrong_display_until else True
 
         # 모든 음 완료 → 결과 화면
-        if idx >= len(melody_12):
+        if idx >= len(melody):
             final_score = int((correct / total) * 100) if total > 0 else 0
 
             if final_score == 100:
@@ -1268,7 +1508,6 @@ def challenge_practice_flow(song_name, play_delay=0.4):
                     continue
                 res = shared.hands.process(rgb)
                 ui.blit_camera_bg(rgb)
-                ui.draw_title_banner("결과 발표!", top_pad=18)
                 grade_surf = shared.font_mid.render(grade, True, grade_col)
                 shared.screen.blit(
                     grade_surf,
@@ -1282,25 +1521,14 @@ def challenge_practice_flow(song_name, play_delay=0.4):
                 pygame.display.flip()
 
             try:
-                finish_title_img = pygame.image.load(
-                    "assets/ui/finish_title.png"
+                practice_result_bg = pygame.image.load(
+                    "assets/ui/practice_result_bg.png"
                 ).convert_alpha()
-                finish_title_img = pygame.transform.smoothscale(
-                    finish_title_img,
-                    (int(shared.WIN_W * 0.3), int(shared.WIN_H * 0.2))
+                practice_result_bg = pygame.transform.smoothscale(
+                    practice_result_bg, (shared.WIN_W, shared.WIN_H)
                 )
             except Exception:
-                finish_title_img = None
-            try:
-                finish_guide_img = pygame.image.load(
-                    "assets/ui/finish_guide.png"
-                ).convert_alpha()
-                finish_guide_img = pygame.transform.smoothscale(
-                    finish_guide_img,
-                    (int(shared.WIN_W * 0.5), int(shared.WIN_H * 0.4))
-                )
-            except Exception:
-                finish_guide_img = None
+                practice_result_bg = None
 
             voice_result = {"cmd": None}
             voice_thread = start_voice_listener(voice_result)
@@ -1312,17 +1540,8 @@ def challenge_practice_flow(song_name, play_delay=0.4):
                     continue
                 res = shared.hands.process(rgb)
                 ui.blit_camera_bg(rgb)
-                if finish_guide_img:
-                    shared.screen.blit(
-                        finish_guide_img,
-                        (shared.WIN_W // 2 - int(shared.WIN_W * 0.25),
-                         shared.WIN_H // 2 - int(shared.WIN_H * 0.1))
-                    )
-                else:
-                    ui.draw_lines_center(
-                        ["'다시하기' 또는 '악보선택'이라고 말해요"],
-                        shared.WIN_H // 2 - 40, size="small", line_gap=10,
-                    )
+                if practice_result_bg:
+                    shared.screen.blit(practice_result_bg, (0, 0))
                 tip = gesture.get_index_tip_xy(res)
                 if tip:
                     if shared._tip_img:
@@ -1351,17 +1570,14 @@ def challenge_practice_flow(song_name, play_delay=0.4):
 
         ui.blit_camera_bg(rgb)
 
-        _t_img = _title_imgs.get(f"challenge_{song_name}")
-        if _t_img:
-            shared.screen.blit(_t_img, (shared.WIN_W // 2 - 250, 18))
-        else:
-            ui.draw_title_banner(f"도전연주: {song_name}", top_pad=18)
-
         ui.draw_and_debug(
             user_notes=pressed_notes,
             program_note=None,
             note_label_text=None,
         )
+        _pb_img = _play_bg_imgs.get(song_name)
+        if _pb_img:
+            shared.screen.blit(_pb_img, (335, 69))
         _sc = _score_imgs.get(song_name)
         if _sc:
             shared.screen.blit(
@@ -1369,21 +1585,24 @@ def challenge_practice_flow(song_name, play_delay=0.4):
                       shared.WIN_H - int(229 * 0.8))
             )
 
+        _sec = _get_sheet_section(song_name, idx)
+        if _sec:
+            _sh_img = _sheet_imgs.get(song_name, {}).get(_sec)
+            if _sh_img:
+                shared.screen.blit(_sh_img, (0, 0))
+        _tip_xs = SONG_TIP_X.get(song_name)
+        if _tip_xs and idx < len(_tip_xs) and _program_tip_img:
+            _tip_y = SONG_TIP_Y.get(song_name, _TIP_Y_DEFAULT)
+            shared.screen.blit(_program_tip_img, (_tip_xs[idx], _tip_y))
+
         if time.time() < wrong_display_until and wrong_notes:
-            overlay = pygame.Surface((shared.WIN_W, shared.WIN_H), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 128))
-            shared.screen.blit(overlay, (0, 0))
+            _dark_overlay = pygame.Surface((shared.WIN_W, shared.WIN_H), pygame.SRCALPHA)
+            _dark_overlay.fill((0, 0, 0, 100))
+            shared.screen.blit(_dark_overlay, (0, 0))
             for note in wrong_notes:
-                if note in shared._piano_key_boxes:
-                    r_box = shared._piano_key_boxes[note]
-                    s = pygame.Surface((r_box.width, r_box.height), pygame.SRCALPHA)
-                    s.fill((255, 60, 60, 200))
-                    shared.screen.blit(s, r_box.topleft)
-                    pygame.draw.rect(shared.screen, (255, 0, 0), r_box, 2)
-            ui.draw_lines_center(
-                ["틀렸어요. 다음 음을 치세요!"],
-                shared.WIN_H // 2 - 40, size="mid", line_gap=0,
-            )
+                _err_img = ui._error_push_imgs.get(note)
+                if _err_img:
+                    shared.screen.blit(_err_img, (0, 0))
         else:
             wrong_notes = set()
 
@@ -1392,7 +1611,7 @@ def challenge_practice_flow(song_name, play_delay=0.4):
             f"  ({correct}/{total})"
         )
         ui.draw_lines_center(
-            [score_text, f"남은 음: {len(melody_12)-idx}개"],
+            [score_text, f"남은 음: {len(melody)-idx}개"],
             116, size="small", line_gap=8,
         )
 
@@ -1454,18 +1673,23 @@ def login_screen():
 
     _font = shared._font_bold(28)
 
-    try:
-        bg = pygame.image.load("assets/ui/mode_select_bg.png").convert_alpha()
-        bg = pygame.transform.smoothscale(bg, (shared.WIN_W, shared.WIN_H))
-    except Exception:
-        bg = None
+    bg = None
+    for _bg_path in ("assets/ui/login_bg.png", "assets/ui/mode_select_bg.png"):
+        try:
+            bg = pygame.image.load(_bg_path).convert_alpha()
+            bg = pygame.transform.smoothscale(bg, (shared.WIN_W, shared.WIN_H))
+            break
+        except Exception:
+            continue
 
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_BACKSPACE:
+                if event.key == pygame.K_TAB:
+                    focus = (focus + 1) % len(fields)
+                elif event.key == pygame.K_BACKSPACE:
                     values[focus] = values[focus][:-1]
                 elif event.key == pygame.K_RETURN:
                     username = values[0].strip()
@@ -1557,11 +1781,16 @@ def login_screen():
 
 
 # ── 최상위 모드 선택 및 실행 ─────────────────────────────────────────
+
 def mode_select_and_run():
+    login_screen()
+    speak(
+        "버츄얼 피아노 러닝 인터페이스에 온 걸 환영해요. "
+        "자유연주, 따라연주, 도전연주 중 원하는 모드를 선택해주세요."
+    )
     while True:
         mode = mode_select()
-        if mode == "BACK_TO_DIFFICULTY":
-            return "BACK_TO_DIFFICULTY"
+
         if mode == "자유연주":
             free_play_loop()
         elif mode == "따라연주":

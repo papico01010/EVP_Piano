@@ -6,7 +6,6 @@ import time
 import numpy as np
 import cv2
 from collections import deque
-
 import shared
 
 # ── 임계값 상수 ───────────────────────────────────────────────────────
@@ -21,7 +20,7 @@ PRESS_VEL_TH   = 0.012
 MIN_BEND_TH    = 0.15
 RELEASE_VEL_TH = -0.003
 VEL_FRAMES     = 3
-PRESS_COOLDOWN = 0.35
+PRESS_COOLDOWN = 0 # 같은 음 연주시 씹힘 조정
 
 # ── 손가락 랜드마크 인덱스 설정 ───────────────────────────────────────
 FINGER_CONFIG = {
@@ -64,7 +63,7 @@ _press_state: dict   = {"pressed": False}
 _finger_states: dict = {}
 _wrist_y_history: dict = {}
 
-# ── 뒤로/종료 타이머 상태 (ui.py에서도 참조) ─────────────────────────
+# ── 종료 타이머 상태 (ui.py에서도 참조) ──────────────────────────────
 _back_t = {"start": None}
 _exit_t = {"start": None}
 
@@ -429,11 +428,11 @@ def _dedup_overlapping(tip_notes: list) -> list:
 
 def get_all_pressed_notes(result) -> set:
     """
-    뒤로/종료 타이머 작동 중 차단
     양손 × 5손가락 → 타격된 건반 set 반환
     locked_note로 드래그 방지 유지
+    종료 타이머 작동 중에는 차단
     """
-    if _back_t.get("start") is not None or _exit_t.get("start") is not None:
+    if _exit_t.get("start") is not None:
         return set()
 
     if not (result and result.multi_hand_landmarks):

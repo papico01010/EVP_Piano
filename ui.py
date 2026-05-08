@@ -12,10 +12,10 @@ import gesture
 
 
 # ── 이미지 캐시 ───────────────────────────────────────────────────────
-_game_bg_img     = None   # assets/ui/game_bg.png - 전체 화면 뒷배경
 _piano_base_img  = None   # basic_piano_st.png 스케일된 Surface
-_prog_push_imgs: dict = {}   # {"C": Surface, "Cs": Surface, ...}
-_user_push_imgs: dict = {}   # {"C": Surface, "Cs": Surface, ...}
+_prog_push_imgs: dict  = {}   # {"C": Surface, "Cs": Surface, ...}
+_user_push_imgs: dict  = {}   # {"C": Surface, "Cs": Surface, ...}
+_error_push_imgs: dict = {}   # {"C4": Surface, ...}
 
 _NOTE_BASES = [
     "C4", "Cs4", "D4", "Ds4", "E4", "F4", "Fs4", "G4", "Gs4", "A4", "As4", "B4",
@@ -25,7 +25,7 @@ _NOTE_BASES = [
 
 # ── 피아노 레이아웃 초기화 ────────────────────────────────────────────
 def _init_piano_layout():
-    global _game_bg_img, _piano_base_img, _prog_push_imgs, _user_push_imgs
+    global _piano_base_img, _prog_push_imgs, _user_push_imgs, _error_push_imgs
     n_white = len(shared.PIANO_WHITE_NOTES)  # 14 (2옥타브)
 
     # basic_piano_st(1280*720) 비율 수정
@@ -58,13 +58,6 @@ def _init_piano_layout():
     for note, x in BLACK_X.items():
         shared._piano_key_boxes[note] = pygame.Rect(x + OFFSET_X, 185, 51, 184)
 
-    # 전체 화면 뒷배경 이미지 로드
-    try:
-        _bg = pygame.image.load("assets/ui/game_bg.png").convert()
-        _game_bg_img = pygame.transform.smoothscale(_bg, (shared.WIN_W, shared.WIN_H))
-    except Exception:
-        _game_bg_img = None
-
     # 피아노 베이스 이미지 로드 (PIANO_W × PIANO_H 로 스케일)
     try:
         img = pygame.image.load("assets/basic_piano_st.png").convert_alpha()
@@ -79,6 +72,7 @@ def _init_piano_layout():
     # program_push_C.png, user_push_C.png 등 → C4/C5 공용
     _prog_push_imgs.clear()
     _user_push_imgs.clear()
+    _error_push_imgs.clear()
     for _note in _NOTE_BASES:
         for _prefix, _store in [("program_push", _prog_push_imgs),
                                 ("user_push",    _user_push_imgs)]:
@@ -91,6 +85,16 @@ def _init_piano_layout():
                 )
             except Exception:
                 _store[_note] = None
+        # error_push는 계이름 전체(C4, Cs4 등) 파일명 사용
+        try:
+            _img = pygame.image.load(
+                f"assets/error_push_{_note}.png"
+            ).convert_alpha()
+            _error_push_imgs[_note] = pygame.transform.smoothscale(
+                _img, (int(shared.WIN_W), int(shared.WIN_H))
+            )
+        except Exception:
+            _error_push_imgs[_note] = None
 
 
 def _toggle_fullscreen():
@@ -126,9 +130,6 @@ def blit_camera_bg(rgb):
     cam_surf = pygame.surfarray.make_surface(np.flipud(np.rot90(rgb)))
     cam_surf = pygame.transform.scale(cam_surf, (shared.WIN_W, shared.WIN_H))
     shared.screen.blit(cam_surf, (0, 0))
-    if _game_bg_img is not None:
-        _game_bg_img.set_alpha(102)
-        shared.screen.blit(_game_bg_img, (0, 0))
 
 
 # ── 텍스트/배너 렌더링 ────────────────────────────────────────────────
@@ -266,36 +267,18 @@ def update_back_and_exit_timers(result, *, inhibit_back=False,
     if fists >= 2:
         if gesture._exit_t["start"] is None:
             gesture._exit_t["start"] = now
-        remain   = exit_hold - (now - gesture._exit_t["start"])
-        sec_left = max(1, min(3, math.ceil(remain)))
-        tim_img  = shared._exit_timer_imgs.get(sec_left)
-        if tim_img:
-            shared.screen.blit(tim_img, (shared.WIN_W - 320, 20))
-        else:
-            _draw_timer_fixed(timer_text("완전 종료까지", remain),
-                              corner="tr", remain_secs=remain)
-        if remain <= 0:
-            gesture._exit_t["start"] = None
-            gesture._back_t["start"] = None
-            return "EXIT"
-    else:
-        gesture._exit_t["start"] = None
-    if not inhibit_back and fists == 1:
-        if gesture._back_t["start"] is None:
-            gesture._back_t["start"] = now
-        remain   = back_hold - (now - gesture._back_t["start"])
+        remain   = back_hold - (now - gesture._exit_t["start"])
         sec_left = max(1, min(3, math.ceil(remain)))
         tim_img  = shared._back_timer_imgs.get(sec_left)
         if tim_img:
             shared.screen.blit(tim_img, (shared.WIN_W - 320, 20))
-        else:
-            _draw_timer_fixed(timer_text("뒤로", remain),
-                              corner="tr", remain_secs=remain)
         if remain <= 0:
+            gesture._exit_t["start"] = None
             gesture._back_t["start"] = None
             return "BACK"
     else:
-        gesture._back_t["start"] = None
+        gesture._exit_t["start"] = None
+    gesture._back_t["start"] = None
     return None
 
 
